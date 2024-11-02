@@ -9,7 +9,6 @@ import numpy as np
 import websockets
 from openai import OpenAI
 from pydub import AudioSegment
-from pyexpat import model
 
 from faster_whisper_server.config import Config
 
