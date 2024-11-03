@@ -1,12 +1,15 @@
 import asyncio
 import time
 from collections import deque
+from pathlib import Path
+from typing import Generator
 from urllib.parse import urlencode
 
 import gradio as gr
 import httpx
 import numpy as np
 import websockets
+from httpx_sse import connect_sse
 from openai import OpenAI
 from pydub import AudioSegment
 
@@ -15,11 +18,16 @@ from faster_whisper_server.config import Config
 # Audio parameters
 SAMPLES_RATE = 16000
 CHUNK_TIME = 100  # Chunk size in ms
+TRANSCRIPTION_ENDPOINT = "/v1/audio/transcriptions"
+TRANSLATION_ENDPOINT = "/v1/audio/translations"
+TIMEOUT_SECONDS = 180
+TIMEOUT = httpx.Timeout(timeout=TIMEOUT_SECONDS)
 
 
 def create_gradio_demo(config: Config) -> gr.Blocks:
     base_url = f"http://{config.host}:{config.port}"
     openai_client = OpenAI(base_url=f"{base_url}/v1", api_key="cant-be-empty")
+    http_client = httpx.Client(base_url=base_url, timeout=TIMEOUT)
     WEBSOCKET_URL_BASE = f"ws://{config.host}:{config.port}/v1/audio/transcriptions"
 
     async def receive_responses(ws):
@@ -104,6 +112,51 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
         async for stream in audio_stream:
             print(stream)
 
+    ## Audio Transcription
+
+    def handler(file_path: str, model: str, temperature: float, stream: bool) -> Generator[str, None, None]:
+        endpoint = TRANSCRIPTION_ENDPOINT
+
+        if stream:
+            previous_transcription = ""
+            for transcription in streaming_audio_task(file_path, endpoint, temperature, model):
+                previous_transcription += transcription
+                yield previous_transcription
+        else:
+            yield audio_task(file_path, endpoint, temperature, model)
+
+    def audio_task(file_path: str, endpoint: str, temperature: float, model: str) -> str:
+        with Path(file_path).open("rb") as file:
+            response = http_client.post(
+                endpoint,
+                files={"file": file},
+                data={
+                    "model": model,
+                    "response_format": "text",
+                    "temperature": temperature,
+                },
+            )
+
+        response.raise_for_status()
+        return response.text
+
+    def streaming_audio_task(
+        file_path: str, endpoint: str, temperature: float, model: str
+    ) -> Generator[str, None, None]:
+        with Path(file_path).open("rb") as file:
+            kwargs = {
+                "files": {"file": file},
+                "data": {
+                    "response_format": "text",
+                    "temperature": temperature,
+                    "model": model,
+                    "stream": True,
+                },
+            }
+            with connect_sse(http_client, "POST", endpoint, **kwargs) as event_source:
+                for event in event_source.iter_sse():
+                    yield event.data
+
     BUFFER_INTERVAL = 0.5
 
     class SessionAudioStreamer:
@@ -184,9 +237,9 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                     label="Language",
                 )
                 temperature_slider = gr.Slider(minimum=0.0, maximum=1.0, step=0.1, label="Temperature", value=0.0)
-                with gr.Row():
-                    preload_models = gr.Button("Preload models")
-                    preload_models_reponse = gr.Textbox(show_label=False)
+                stream_checkbox = gr.Checkbox(label="Stream", value=True)
+                preload_models = gr.Button("Preload models")
+                preload_models_reponse = gr.Textbox(show_label=False)
                 iface.load(update_model_dropdown, inputs=[], outputs=[model_dropdown, models])
                 model_dropdown.change(
                     update_language_dropdown, inputs=[model_dropdown, models], outputs=[language_dropdown]
@@ -209,11 +262,21 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 #     audio_file.stream(on_audio_stream, inputs=[audio_file, streamer_state], outputs=[])
             with gr.Column():
                 with gr.Tab("Audio Live Simulation"):
-                    audio_file = gr.Audio(label="Audio", sources=["upload"], type="filepath")
-                    transcription = gr.Textbox(label="Transcription")
-                    audio_file.play(
+                    audio_file_simulation = gr.Audio(label="Audio", sources=["upload"], type="filepath")
+                    text_simulation_output = gr.Textbox(label="Transcription")
+                    audio_file_simulation.play(
                         stream_audio_file,
-                        inputs=[audio_file, model_dropdown, language_dropdown, temperature_slider],
-                        outputs=[transcription],
+                        inputs=[audio_file_simulation, model_dropdown, language_dropdown, temperature_slider],
+                        outputs=[text_simulation_output],
+                    )
+
+                with gr.Tab("Audio Transcript"):
+                    audio_file_transcript = gr.Audio(type="filepath")
+                    btn = gr.Button("Start")
+                    text_transcription_output = gr.Textbox(label="Transcription")
+                    btn.click(
+                        handler,
+                        inputs=[audio_file_transcript, model_dropdown, temperature_slider, stream_checkbox],
+                        outputs=[text_transcription_output],
                     )
     return iface
