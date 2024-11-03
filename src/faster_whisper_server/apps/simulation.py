@@ -19,6 +19,7 @@ from faster_whisper_server.config import Config
 SAMPLES_RATE = 16000
 CHUNK_TIME = 100  # Chunk size in ms
 TRANSCRIPTION_ENDPOINT = "/v1/audio/transcriptions"
+MODEL_LOAD_ENDPOINT = "/api/ps"
 TRANSLATION_ENDPOINT = "/v1/audio/translations"
 TIMEOUT_SECONDS = 180
 TIMEOUT = httpx.Timeout(timeout=TIMEOUT_SECONDS)
@@ -100,7 +101,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
         return dropdown
 
     def fn_preload_models(model):
-        response = httpx.post(f"http://192.168.5.32:9080/api/ps/{model}")
+        response = http_client.post(f"{MODEL_LOAD_ENDPOINT}/{model}")
         if response.is_success:
             return "Models preloaded successfully"
         elif response.status_code == 409:
@@ -113,7 +114,6 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             print(stream)
 
     ## Audio Transcription
-
     def handler(file_path: str, model: str, temperature: float, stream: bool) -> Generator[str, None, None]:
         endpoint = TRANSCRIPTION_ENDPOINT
 

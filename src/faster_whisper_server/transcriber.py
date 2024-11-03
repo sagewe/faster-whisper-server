@@ -55,6 +55,7 @@ async def audio_transcriber(
     full_audio = Audio()
     confirmed = Transcription()
     import time
+
     last_chunk_time = time.time()
     async for chunk in audio_stream.chunks(min_duration):
         last_chunk_time = time.time()
@@ -71,4 +72,6 @@ async def audio_transcriber(
     confirmed.extend(local_agreement.unconfirmed.words)
     yield confirmed
     logger.info("Audio transcriber finished")
-    logger.warning(f"Last chunk received at {last_chunk_time}, it has been {time.time() - last_chunk_time} seconds since then")
+    logger.warning(
+        f"Last chunk received at {last_chunk_time}, it has been {time.time() - last_chunk_time} seconds since then"
+    )

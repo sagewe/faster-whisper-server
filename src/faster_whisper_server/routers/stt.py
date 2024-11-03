@@ -302,6 +302,7 @@ async def transcribe_stream(
                     break
 
                 import time
+
                 start = time.time()
                 if response_format == ResponseFormat.TEXT:
                     await ws.send_text(transcription.text)
