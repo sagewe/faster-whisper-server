@@ -1,4 +1,7 @@
 import asyncio
+from calendar import c
+from re import A, S
+import re
 import time
 from collections import deque
 from pathlib import Path
@@ -12,8 +15,12 @@ import websockets
 from httpx_sse import connect_sse
 from openai import OpenAI
 from pydub import AudioSegment
+import traceback
 
 from faster_whisper_server.config import Config
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Audio parameters
 SAMPLES_RATE = 16000
@@ -157,12 +164,9 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 for event in event_source.iter_sse():
                     yield event.data
 
-    BUFFER_INTERVAL = 0.5
-
     class SessionAudioStreamer:
         def __init__(self):
             self.buffer = deque()
-            self.buffer_lock = asyncio.Lock()
             self.ws_connection = None
             self.ws_established = asyncio.Event()
             self.send_task = None
@@ -173,17 +177,16 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
         async def close(self):
             """优雅关闭连接"""
             self.is_closing = True
-            
+
             # 1. 等待缓冲区发送完成
             if self.buffer:
                 try:
-                    async with self.buffer_lock:
-                        if self.ws_connection and self.buffer:
-                            combined_data = np.concatenate(self.buffer, axis=0).tobytes()
-                            await self.ws_connection.send(combined_data)
-                            self.buffer.clear()
+                    if self.ws_connection and self.buffer:
+                        combined_data = np.concatenate(self.buffer, axis=0).tobytes()
+                        await self.ws_connection.send(combined_data)
+                        self.buffer.clear()
                 except Exception as e:
-                    print(f"Error sending final buffer: {e}")
+                    logger.error(f"Error sending final buffer: {e}")
 
             # 2. 等待5秒接收最后的响应
             try:
@@ -200,17 +203,22 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             return self.current_response  # 返回最终的响应
 
         async def _send_buffer(self):
+            logger.info("Starting to send buffer")
             await self.ws_established.wait()
+            logger.info("WebSocket connection established for session")
             while not self.is_closing:  # 检查关闭标志
                 if self.ws_connection and self.buffer:
-                    async with self.buffer_lock:
-                        combined_data = np.concatenate(self.buffer, axis=0).tobytes()
-                        self.buffer.clear()
+                    combined_data = b"".join(self.buffer)
+                    self.buffer.clear()
                     try:
+                        logger.info(f"sending {len(combined_data)} bytes to WebSocket")
                         await self.ws_connection.send(combined_data)
+                        logger.info("Sent buffer")
                     except websockets.ConnectionClosed:
                         break
-                await asyncio.sleep(BUFFER_INTERVAL)
+                else:
+                    await asyncio.sleep(0.1)
+            logger.info("Finished sending buffer")
 
         async def _receive_responses(self):
             """负责接收WebSocket服务器的响应"""
@@ -219,21 +227,27 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 if self.ws_connection:
                     try:
                         response = await self.ws_connection.recv()
+                        logger.info(f"received response: {response}")
                         self.current_response = response
-                        print("收到响应:", response)
                     except websockets.ConnectionClosed:
-                        print("WebSocket接收连接关闭")
+                        logger.info("WebSocket connection closed")
                         break
-                await asyncio.sleep(0.1)
+                else:
+                    await asyncio.sleep(0.1)
 
         async def buffer_audio_chunk(self, audio_chunk, model, language, temperature):
             if not self.ws_established.is_set():
                 await self.initialize_ws_connection(model, language, temperature)
                 self.send_task = asyncio.create_task(self._send_buffer())
                 self.receive_task = asyncio.create_task(self._receive_responses())
-                
-            async with self.buffer_lock:
-                self.buffer.append(audio_chunk)
+
+            sr, data = audio_chunk
+            audio_chunk = (
+                AudioSegment(data.tobytes(), frame_rate=sr, sample_width=data.dtype.itemsize, channels=1)
+                .set_frame_rate(SAMPLES_RATE)
+                .raw_data
+            )
+            self.buffer.append(audio_chunk)
 
         async def initialize_ws_connection(self, model, language, temperature):
             """Initialize the WebSocket connection based on session parameters."""
@@ -249,7 +263,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             url = f"{WEBSOCKET_URL_BASE}?{urlencode(queries)}"
             self.ws_connection = await websockets.connect(url)
             self.ws_established.set()
-            print("WebSocket connection established for session")
+            logger.info("WebSocket connection established for session")
 
     with gr.Blocks(theme=gr.themes.Soft()) as iface:
         models = gr.State({})
@@ -304,22 +318,23 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                         inputs=[audio_file_transcript, model_dropdown, temperature_slider, stream_checkbox],
                         outputs=[text_transcription_output],
                     )
-                
+
                 with gr.Tab("Live"):
                     streamer_state = gr.State(lambda: SessionAudioStreamer())
                     audio_live = gr.Audio(sources=["microphone"], type="numpy", streaming=True)
                     text_live_output = gr.Textbox(label="Transcription", interactive=False)
 
-                    async def process_audio_stream(audio_chunk, state: SessionAudioStreamer, model, language, temperature):
+                    async def process_audio_stream(
+                        audio_chunk, state: SessionAudioStreamer, model, language, temperature
+                    ):
                         try:
                             if audio_chunk is None:
                                 return ""
-                                
+
                             await state.buffer_audio_chunk(audio_chunk, model, language, temperature)
                             return state.current_response
                         except Exception as e:
-                            print(f"Error in process_audio_stream: {e}")
-                            return str(e)
+                            return traceback.format_exc()
 
                     async def on_stop(state: SessionAudioStreamer):
                         try:
@@ -332,23 +347,12 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
 
                     audio_live.stream(
                         fn=process_audio_stream,
-                        inputs=[
-                            audio_live,
-                            streamer_state,
-                            model_dropdown,
-                            language_dropdown,
-                            temperature_slider
-                        ],
+                        inputs=[audio_live, streamer_state, model_dropdown, language_dropdown, temperature_slider],
                         outputs=text_live_output,
                         show_progress=False,
                         api_name=None,
-                        time_limit=120
+                        time_limit=1,
                     )
-                    
-                    audio_live.stop_recording(
-                        fn=on_stop,
-                        inputs=[streamer_state],
-                        outputs=text_live_output
 
-                    )
+                    audio_live.stop_recording(fn=on_stop, inputs=[streamer_state], outputs=text_live_output)
     return iface
