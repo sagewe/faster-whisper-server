@@ -160,14 +160,80 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
     BUFFER_INTERVAL = 0.5
 
     class SessionAudioStreamer:
-        """Handles audio streaming to a WebSocket server for a single session."""
-
         def __init__(self):
             self.buffer = deque()
             self.buffer_lock = asyncio.Lock()
             self.ws_connection = None
             self.ws_established = asyncio.Event()
-            self.flush_task = None
+            self.send_task = None
+            self.receive_task = None
+            self.current_response = ""  # 存储最新的响应
+            self.is_closing = False  # 添加关闭标志
+
+        async def close(self):
+            """优雅关闭连接"""
+            self.is_closing = True
+            
+            # 1. 等待缓冲区发送完成
+            if self.buffer:
+                try:
+                    async with self.buffer_lock:
+                        if self.ws_connection and self.buffer:
+                            combined_data = np.concatenate(self.buffer, axis=0).tobytes()
+                            await self.ws_connection.send(combined_data)
+                            self.buffer.clear()
+                except Exception as e:
+                    print(f"Error sending final buffer: {e}")
+
+            # 2. 等待5秒接收最后的响应
+            try:
+                await asyncio.sleep(5)
+            finally:
+                # 3. 取消任务并关闭连接
+                if self.send_task:
+                    self.send_task.cancel()
+                if self.receive_task:
+                    self.receive_task.cancel()
+                if self.ws_connection:
+                    await self.ws_connection.close()
+
+            return self.current_response  # 返回最终的响应
+
+        async def _send_buffer(self):
+            await self.ws_established.wait()
+            while not self.is_closing:  # 检查关闭标志
+                if self.ws_connection and self.buffer:
+                    async with self.buffer_lock:
+                        combined_data = np.concatenate(self.buffer, axis=0).tobytes()
+                        self.buffer.clear()
+                    try:
+                        await self.ws_connection.send(combined_data)
+                    except websockets.ConnectionClosed:
+                        break
+                await asyncio.sleep(BUFFER_INTERVAL)
+
+        async def _receive_responses(self):
+            """负责接收WebSocket服务器的响应"""
+            await self.ws_established.wait()
+            while True:
+                if self.ws_connection:
+                    try:
+                        response = await self.ws_connection.recv()
+                        self.current_response = response
+                        print("收到响应:", response)
+                    except websockets.ConnectionClosed:
+                        print("WebSocket接收连接关闭")
+                        break
+                await asyncio.sleep(0.1)
+
+        async def buffer_audio_chunk(self, audio_chunk, model, language, temperature):
+            if not self.ws_established.is_set():
+                await self.initialize_ws_connection(model, language, temperature)
+                self.send_task = asyncio.create_task(self._send_buffer())
+                self.receive_task = asyncio.create_task(self._receive_responses())
+                
+            async with self.buffer_lock:
+                self.buffer.append(audio_chunk)
 
         async def initialize_ws_connection(self, model, language, temperature):
             """Initialize the WebSocket connection based on session parameters."""
@@ -184,47 +250,6 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             self.ws_connection = await websockets.connect(url)
             self.ws_established.set()
             print("WebSocket connection established for session")
-
-        async def buffer_audio_chunk(self, audio_chunk):
-            """Buffer incoming audio chunks and start flush task if not running."""
-            print("Buffering audio chunk")
-            async with self.buffer_lock:
-                self.buffer.append(audio_chunk)
-                print("Buffer size:", len(self.buffer))
-
-            # Start the flush task if not already running
-            if self.flush_task is None:
-                self.flush_task = asyncio.create_task(self._buffer_flush())
-            print("Buffered audio chunk")
-
-        async def _buffer_flush(self):
-            return
-            """Flush the buffer periodically by sending data to WebSocket."""
-            await self.ws_established.wait()
-            while True:
-                if self.ws_connection and self.buffer:
-                    async with self.buffer_lock:
-                        combined_data = np.concatenate(self.buffer, axis=0).tobytes()
-                        self.buffer.clear()
-
-                    try:
-                        await self.ws_connection.send(combined_data)
-                        response = await self.ws_connection.recv()
-                        print("Server response:", response)
-                    except websockets.ConnectionClosed:
-                        print("WebSocket connection closed unexpectedly")
-                        break
-
-                await asyncio.sleep(BUFFER_INTERVAL)
-
-        async def close(self):
-            """Close the WebSocket connection and clear the buffer."""
-            if self.ws_connection:
-                await self.ws_connection.close()
-                print("WebSocket connection closed for session")
-            if self.flush_task:
-                self.flush_task.cancel()
-            self.buffer.clear()
 
     with gr.Blocks(theme=gr.themes.Soft()) as iface:
         models = gr.State({})
@@ -278,5 +303,52 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                         handler,
                         inputs=[audio_file_transcript, model_dropdown, temperature_slider, stream_checkbox],
                         outputs=[text_transcription_output],
+                    )
+                
+                with gr.Tab("Live"):
+                    streamer_state = gr.State(lambda: SessionAudioStreamer())
+                    audio_live = gr.Audio(sources=["microphone"], type="numpy", streaming=True)
+                    text_live_output = gr.Textbox(label="Transcription", interactive=False)
+
+                    async def process_audio_stream(audio_chunk, state: SessionAudioStreamer, model, language, temperature):
+                        try:
+                            if audio_chunk is None:
+                                return ""
+                                
+                            await state.buffer_audio_chunk(audio_chunk, model, language, temperature)
+                            return state.current_response
+                        except Exception as e:
+                            print(f"Error in process_audio_stream: {e}")
+                            return str(e)
+
+                    async def on_stop(state: SessionAudioStreamer):
+                        try:
+                            if state:
+                                final_response = await state.close()
+                                return final_response  # 返回最终响应
+                        except Exception as e:
+                            print(f"Error in on_stop: {e}")
+                            return str(e)
+
+                    audio_live.stream(
+                        fn=process_audio_stream,
+                        inputs=[
+                            audio_live,
+                            streamer_state,
+                            model_dropdown,
+                            language_dropdown,
+                            temperature_slider
+                        ],
+                        outputs=text_live_output,
+                        show_progress=False,
+                        api_name=None,
+                        time_limit=120
+                    )
+                    
+                    audio_live.stop_recording(
+                        fn=on_stop,
+                        inputs=[streamer_state],
+                        outputs=text_live_output
+
                     )
     return iface
