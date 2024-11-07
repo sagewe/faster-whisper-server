@@ -314,7 +314,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             with gr.Column():
                 with gr.Tab("Audio Live Simulation"):
                     audio_file_simulation = gr.Audio(label="Audio", sources=["upload"], type="filepath")
-                    text_simulation_output = gr.Textbox(label="Transcription", elem_id="rtl-textbox1")
+                    text_simulation_output = gr.Textbox(label="Transcription", interactive=False, rtl=True)
                     audio_file_simulation.play(
                         stream_audio_file,
                         inputs=[audio_file_simulation, model_dropdown, language_dropdown, temperature_slider],
@@ -324,7 +324,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 with gr.Tab("Audio Transcript"):
                     audio_file_transcript = gr.Audio(type="filepath")
                     btn = gr.Button("Start")
-                    text_transcription_output = gr.Textbox(label="Transcription", elem_id="rtl-textbox2")
+                    text_transcription_output = gr.Textbox(label="Transcription", interactive=False, rtl=True)
                     btn.click(
                         handler,
                         inputs=[audio_file_transcript, model_dropdown, temperature_slider, stream_checkbox],
@@ -334,7 +334,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 with gr.Tab("Live"):
                     streamer_state = gr.State(lambda: SessionAudioStreamer())
                     audio_live = gr.Audio(sources=["microphone"], type="numpy", streaming=True)
-                    text_live_output = gr.Textbox(label="Transcription", interactive=False, elem_id="rtl-textbox3")
+                    text_live_output = gr.Textbox(label="Transcription", interactive=False, rtl=True)
 
                     async def process_audio_stream(
                         audio_chunk, state: SessionAudioStreamer, model, language, temperature
@@ -367,4 +367,16 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                     )
 
                     audio_live.stop_recording(fn=on_stop, inputs=[streamer_state], outputs=text_live_output)
+
+                def fn_update_rtl(
+                    language_dropdown, text_simulation_output, text_transcription_output, text_live_output
+                ):
+                    rtl = language_dropdown == "ar"
+                    return gr.update(rtl=rtl), gr.update(rtl=rtl), gr.update(rtl=rtl)
+
+                language_dropdown.change(
+                    fn_update_rtl,
+                    inputs=[language_dropdown],
+                    outputs=[text_simulation_output, text_transcription_output, text_live_output],
+                )
     return iface
