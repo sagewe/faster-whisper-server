@@ -31,6 +31,18 @@ TRANSLATION_ENDPOINT = "/v1/audio/translations"
 TIMEOUT_SECONDS = 180
 TIMEOUT = httpx.Timeout(timeout=TIMEOUT_SECONDS)
 
+css = """
+#rtl-textbox1{
+  text-align: right;
+}
+#rtl-textbox2{
+  text-align: right;
+}
+#rtl-textbox3{
+  text-align: right;
+}
+"""
+
 
 def create_gradio_demo(config: Config) -> gr.Blocks:
     base_url = f"http://{config.host}:{config.port}"
@@ -265,7 +277,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             self.ws_established.set()
             logger.info("WebSocket connection established for session")
 
-    with gr.Blocks(theme=gr.themes.Soft()) as iface:
+    with gr.Blocks(theme=gr.themes.Soft(), css=css) as iface:
         models = gr.State({})
         with gr.Row():
             with gr.Column():
@@ -302,7 +314,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             with gr.Column():
                 with gr.Tab("Audio Live Simulation"):
                     audio_file_simulation = gr.Audio(label="Audio", sources=["upload"], type="filepath")
-                    text_simulation_output = gr.Textbox(label="Transcription")
+                    text_simulation_output = gr.Textbox(label="Transcription", elem_id="rtl-textbox1")
                     audio_file_simulation.play(
                         stream_audio_file,
                         inputs=[audio_file_simulation, model_dropdown, language_dropdown, temperature_slider],
@@ -312,7 +324,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 with gr.Tab("Audio Transcript"):
                     audio_file_transcript = gr.Audio(type="filepath")
                     btn = gr.Button("Start")
-                    text_transcription_output = gr.Textbox(label="Transcription")
+                    text_transcription_output = gr.Textbox(label="Transcription", elem_id="rtl-textbox2")
                     btn.click(
                         handler,
                         inputs=[audio_file_transcript, model_dropdown, temperature_slider, stream_checkbox],
@@ -322,7 +334,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 with gr.Tab("Live"):
                     streamer_state = gr.State(lambda: SessionAudioStreamer())
                     audio_live = gr.Audio(sources=["microphone"], type="numpy", streaming=True)
-                    text_live_output = gr.Textbox(label="Transcription", interactive=False)
+                    text_live_output = gr.Textbox(label="Transcription", interactive=False, elem_id="rtl-textbox3")
 
                     async def process_audio_stream(
                         audio_chunk, state: SessionAudioStreamer, model, language, temperature
