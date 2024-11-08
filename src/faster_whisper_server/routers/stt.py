@@ -41,6 +41,7 @@ from faster_whisper_server.config import (
 from faster_whisper_server.dependencies import ConfigDependency, ModelManagerDependency, get_config
 from faster_whisper_server.text_utils import segments_to_srt, segments_to_text, segments_to_vtt
 from faster_whisper_server.transcriber import audio_transcriber
+import faster_whisper
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable
@@ -242,6 +243,7 @@ async def audio_receiver(ws: WebSocket, audio_stream: AudioStream) -> None:
     try:
         while True:
             bytes_ = await asyncio.wait_for(ws.receive_bytes(), timeout=config.max_no_data_seconds)
+            # audio_samples = faster_whisper.decode_audio(BytesIO(bytes_))
             audio_samples = audio_samples_from_file(BytesIO(bytes_))
             audio_stream.extend(audio_samples)
             if audio_stream.duration - config.inactivity_window_seconds >= 0:

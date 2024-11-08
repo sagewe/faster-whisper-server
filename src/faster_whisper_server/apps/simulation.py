@@ -1,5 +1,6 @@
 import asyncio
 from calendar import c
+from io import BytesIO
 from re import A, S
 import re
 import time
@@ -61,11 +62,13 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
 
     async def stream_audio(ws, audio_file_path):
         """Stream audio from the specified file to the WebSocket server."""
-        audio = AudioSegment.from_file(audio_file_path).set_frame_rate(SAMPLES_RATE)
+        audio = AudioSegment.from_file(audio_file_path).set_frame_rate(SAMPLES_RATE).set_channels(1)
         start = time.perf_counter()
         expect_time_per_chunk = CHUNK_TIME / 1000
         for i, audio_start in enumerate(range(0, len(audio), CHUNK_TIME)):
             audio_chunk = audio[audio_start : audio_start + CHUNK_TIME]
+            # buffer = BytesIO()
+            # audio_chunk.export(buffer, format="raw")
             await ws.send(audio_chunk.raw_data)
             time_to_sleep = (i + 1) * expect_time_per_chunk - (time.perf_counter() - start)
             await asyncio.sleep(time_to_sleep)
@@ -194,7 +197,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             if self.buffer:
                 try:
                     if self.ws_connection and self.buffer:
-                        combined_data = np.concatenate(self.buffer, axis=0).tobytes()
+                        combined_data = b"".join(self.buffer)
                         await self.ws_connection.send(combined_data)
                         self.buffer.clear()
                 except Exception as e:
