@@ -19,6 +19,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from fastapi.websockets import WebSocketState
 from faster_whisper.vad import VadOptions, get_speech_timestamps
+import msgpack
 from pydantic import AfterValidator, Field
 from sympy import im
 
@@ -243,7 +244,10 @@ async def audio_receiver(ws: WebSocket, audio_stream: AudioStream) -> None:
     try:
         while True:
             bytes_ = await asyncio.wait_for(ws.receive_bytes(), timeout=config.max_no_data_seconds)
-            # audio_samples = faster_whisper.decode_audio(BytesIO(bytes_))
+            bytes_ = msgpack.unpackb(bytes_)
+            if "stop" in bytes_:
+                break
+            bytes_ = bytes_["data"]
             audio_samples = audio_samples_from_file(BytesIO(bytes_))
             audio_stream.extend(audio_samples)
             if audio_stream.duration - config.inactivity_window_seconds >= 0:

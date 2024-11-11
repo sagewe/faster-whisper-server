@@ -1,7 +1,4 @@
 import asyncio
-from calendar import c
-from io import BytesIO
-from re import A, S
 import re
 import time
 from collections import deque
@@ -20,6 +17,7 @@ import traceback
 
 from faster_whisper_server.config import Config
 import logging
+import msgpack
 
 logger = logging.getLogger(__name__)
 
@@ -65,22 +63,16 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
         audio = AudioSegment.from_file(audio_file_path).set_frame_rate(SAMPLES_RATE).set_channels(1)
         start = time.perf_counter()
         expect_time_per_chunk = CHUNK_TIME / 1000
+        num_chunks = len(audio) // CHUNK_TIME + 1
         for i, audio_start in enumerate(range(0, len(audio), CHUNK_TIME)):
             audio_chunk = audio[audio_start : audio_start + CHUNK_TIME]
-            # buffer = BytesIO()
-            # audio_chunk.export(buffer, format="raw")
-            await ws.send(audio_chunk.raw_data)
+            await ws.send(msgpack.packb({"data": audio_chunk.raw_data}))
             time_to_sleep = (i + 1) * expect_time_per_chunk - (time.perf_counter() - start)
-            await asyncio.sleep(time_to_sleep)
-
-    async def websocket_stream(audio_file_path, base, queries):
-        url = f"{base}?{urlencode(queries)}"
-        async with websockets.connect(url) as ws:
-            stream_task = asyncio.create_task(stream_audio(ws, audio_file_path))
-
-            # Yield responses live as they arrive
-            async for response in receive_responses(ws):
-                yield response
+            if i < num_chunks - 1:
+                await asyncio.sleep(time_to_sleep)
+        last_packet_time = time.perf_counter()
+        await ws.send(msgpack.packb({"stop": True}))
+        return last_packet_time
 
     async def stream_audio_file(audio_file, model, language, temperature):
         queries = {
@@ -90,8 +82,17 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
         }
         if language != "auto":
             queries["language"] = language
-        async for response in websocket_stream(audio_file, WEBSOCKET_URL_BASE, queries):
-            yield response  # Yield each WebSocket response to Gradio
+        url = f"{WEBSOCKET_URL_BASE}?{urlencode(queries)}"
+        async with websockets.connect(url) as ws:
+            stream_task = asyncio.create_task(stream_audio(ws, audio_file))
+
+            async for response in receive_responses(ws):
+                last_packet_response_time = time.perf_counter()
+                yield "###Transcripts:\n" + response
+
+            last_packet_request_time = await stream_task
+
+        yield f"### Transcripts:\n{response}\n### Statistics:\nLatency: {(last_packet_response_time - last_packet_request_time) * 1000:.1f} ms"
 
     def update_model_dropdown() -> gr.Dropdown:
         model_data = openai_client.models.list().data
@@ -227,7 +228,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                     self.buffer.clear()
                     try:
                         logger.info(f"sending {len(combined_data)} bytes to WebSocket")
-                        await self.ws_connection.send(combined_data)
+                        await self.ws_connection.send(msgpack.packb({"data": combined_data}))
                         logger.info("Sent buffer")
                     except websockets.ConnectionClosed:
                         break
@@ -309,7 +310,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             with gr.Column():
                 with gr.Tab("Audio Live Simulation"):
                     audio_file_simulation = gr.Audio(label="Audio", sources=["upload"], type="filepath")
-                    text_simulation_output = gr.Textbox(label="Transcription", interactive=False, rtl=True)
+                    text_simulation_output = gr.Markdown(label="Transcription", show_label=True, rtl=True)
                     audio_file_simulation.play(
                         stream_audio_file,
                         inputs=[audio_file_simulation, model_dropdown, language_dropdown, temperature_slider],
@@ -363,9 +364,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
 
                     audio_live.stop_recording(fn=on_stop, inputs=[streamer_state], outputs=text_live_output)
 
-                def fn_update_rtl(
-                    language_dropdown, text_simulation_output, text_transcription_output, text_live_output
-                ):
+                def fn_update_rtl(language_dropdown):
                     rtl = language_dropdown == "ar"
                     return gr.update(rtl=rtl), gr.update(rtl=rtl), gr.update(rtl=rtl)
 
