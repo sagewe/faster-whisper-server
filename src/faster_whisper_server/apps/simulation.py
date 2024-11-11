@@ -282,6 +282,13 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
 
     with gr.Blocks(theme=gr.themes.Soft(), css=css) as iface:
         models = gr.State({})
+        gr.Markdown("""
+# ASR 演示系统
+本系统支持三种演示模式：
+1. 实时模拟：上传音频文件，系统实际音频的播放速度连续发送音频到ASR后台，模拟实时ASR
+2. 音频转码：上传音频文件，系统一次性将音频发送到ASR后台处理，模拟离线转码
+3. 实时演示：直接读取麦克风信号，进行实时转码
+""")
         with gr.Row():
             with gr.Column():
                 model_dropdown = gr.Dropdown(
@@ -299,21 +306,6 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                     update_language_dropdown, inputs=[model_dropdown, models], outputs=[language_dropdown]
                 )
                 preload_models.click(fn_preload_models, inputs=[model_dropdown], outputs=[preload_models_reponse])
-                # with gr.Tab("Live Stream Audio"):
-                #     audio_file = gr.Audio(label="Audio", streaming=True)
-                #     streamer_state = gr.State(SessionAudioStreamer())
-
-                #     async def on_audio_start_recording(model, language, temperature, streamer_state):
-                #         await streamer_state.initialize_ws_connection(model, language, temperature)
-                #         return streamer_state
-
-                #     async def on_audio_stream(audio_chunk, streamer_state):
-                #         await streamer_state.buffer_audio_chunk(audio_chunk)
-
-                #     audio_file.start_recording(on_audio_start_recording,
-                #                                inputs=[model_dropdown, language_dropdown, temperature_slider, streamer_state],
-                #                                outputs=[streamer_state])
-                #     audio_file.stream(on_audio_stream, inputs=[audio_file, streamer_state], outputs=[])
             with gr.Column():
                 with gr.Tab("Audio Live Simulation"):
                     audio_file_simulation = gr.Audio(label="Audio", sources=["upload"], type="filepath")
