@@ -1,19 +1,20 @@
 import asyncio
-from collections import deque
-from collections.abc import Generator
+import contextlib
 import logging
-from pathlib import Path
 import time
 import traceback
+from collections import deque
+from collections.abc import Generator
+from pathlib import Path
 from urllib.parse import urlencode
 
 import gradio as gr
 import httpx
-from httpx_sse import connect_sse
 import msgpack
+import websockets
+from httpx_sse import connect_sse
 from openai import OpenAI
 from pydub import AudioSegment
-import websockets
 
 from faster_whisper_server.config import Config
 
@@ -29,42 +30,16 @@ TIMEOUT_SECONDS = 180
 TIMEOUT = httpx.Timeout(timeout=TIMEOUT_SECONDS)
 TRANSCRIPTION_UPDATE_INTERVAL = 0.1
 
-css = """
-#rtl-textbox1{
-  text-align: right;
-}
-#rtl-textbox2{
-  text-align: right;
-}
-#rtl-textbox3{
-  text-align: right;
-}
-"""
 
+class WebSocketTranscriberClient:
+    def __init__(self, port: int, host: str):
+        self.port = port
+        self.host = host
+        self.base_url = f"ws://{host}:{port}/v1/audio/transcriptions"
 
-def create_gradio_demo(config: Config) -> gr.Blocks:
-    base_url = f"http://{config.host}:{config.port}"
-    openai_client = OpenAI(base_url=f"{base_url}/v1", api_key="cant-be-empty")
-    http_client = httpx.Client(base_url=base_url, timeout=TIMEOUT)
-    WEBSOCKET_URL_BASE = f"ws://{config.host}:{config.port}/v1/audio/transcriptions"
+        self.ws = None
 
-    async def stream_audio(ws, audio_file_path):
-        """Stream audio from the specified file to the WebSocket server."""
-        audio = AudioSegment.from_file(audio_file_path).set_frame_rate(SAMPLES_RATE).set_channels(1)
-        start = time.perf_counter()
-        expect_time_per_chunk = CHUNK_TIME / 1000
-        num_chunks = len(audio) // CHUNK_TIME + 1
-        for i, audio_start in enumerate(range(0, len(audio), CHUNK_TIME)):
-            audio_chunk = audio[audio_start : audio_start + CHUNK_TIME]
-            await ws.send(msgpack.packb({"data": audio_chunk.raw_data}))
-            time_to_sleep = (i + 1) * expect_time_per_chunk - (time.perf_counter() - start)
-            if i < num_chunks - 1:
-                await asyncio.sleep(time_to_sleep)
-        last_packet_time = time.perf_counter()
-        await ws.send(msgpack.packb({"stop": True}))
-        return last_packet_time
-
-    async def stream_audio_file(audio_file, model, language, temperature):
+    def encode_query(self, model, language, temperature):
         queries = {
             "response_format": "text",
             "model": model,
@@ -72,15 +47,56 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
         }
         if language != "auto":
             queries["language"] = language
-        url = f"{WEBSOCKET_URL_BASE}?{urlencode(queries)}"
-        confirmed = ""
-        async with websockets.connect(url) as ws:
-            stream_task = asyncio.create_task(stream_audio(ws, audio_file))
+        return f"{self.base_url}?{urlencode(queries)}"
 
+    @contextlib.asynccontextmanager
+    async def connect(self, model: str, language: str, temperature: float):
+        async with websockets.connect(self.encode_query(model, language, temperature)) as ws:
+            self.ws = ws
+            yield self
+
+    async def send_audio_chunk(self, audio_chunk):
+        await self.ws.send(msgpack.packb({"data": audio_chunk.raw_data}))
+
+    async def send_stop_command(self):
+        await self.ws.send(msgpack.packb({"stop": True}))
+
+    async def receive_response(self):
+        return msgpack.unpackb(await self.ws.recv())
+
+
+class SimulatedLiveTranscription:
+    def __init__(self, host, port, chunk_time_ms: int = CHUNK_TIME, sample_rate=SAMPLES_RATE, channel=1):
+        self.client = WebSocketTranscriberClient(port, host)
+        self.chunk_time_ms = chunk_time_ms
+        self.sample_rate = sample_rate
+        self.channel = channel
+
+    async def stream_audio(self, audio_file_path):
+        audio = AudioSegment.from_file(audio_file_path).set_frame_rate(self.sample_rate).set_channels(self.channel)
+        start = time.perf_counter()
+        time_per_chunk_s = self.chunk_time_ms / 1000.0
+        num_chunks = len(audio) // self.chunk_time_ms + 1
+
+        for i, audio_start in enumerate(range(0, len(audio), self.chunk_time_ms)):
+            audio_chunk = audio[audio_start : audio_start + self.chunk_time_ms]
+            await self.client.send_audio_chunk(audio_chunk)
+            if i < num_chunks - 1:
+                await asyncio.sleep((i + 1) * time_per_chunk_s - (time.perf_counter() - start))
+
+        last_chunk_send_time = time.perf_counter()
+        await self.client.send_stop_command()
+        return last_chunk_send_time
+
+    async def stream_audio_file(self, audio_file, model, language, temperature):
+        confirmed = ""
+
+        async with self.client.connect(model=model, language=language, temperature=temperature):
+            stream_task = asyncio.create_task(self.stream_audio(audio_file))
             try:
                 while True:
-                    response = msgpack.unpackb(await ws.recv())
-                    last_packet_response_time = time.perf_counter()
+                    response = await self.client.receive_response()
+                    last_chunk_response_time = time.perf_counter()
                     confirmed, unconfirmed = response["confirmed"], response["unconfirmed"]
                     yield [(confirmed, "confirmed"), (unconfirmed, "unconfirmed")]
             except websockets.ConnectionClosed:
@@ -89,8 +105,41 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
 
         yield [
             (confirmed, "confirmed"),
-            (f"\nLatency: {(last_packet_response_time - last_packet_request_time) * 1000:.1f} ms", "info"),
+            (f"\nLatency: {(last_chunk_response_time - last_packet_request_time) * 1000:.1f} ms", "info"),
         ]
+
+    @classmethod
+    def create_gradio_interface(cls, config: Config, model_dropdown, language_dropdown, temperature_slider):
+        simulated_live_transcription = cls(config.host, config.port)
+
+        gr.Markdown("""
+### 模拟实时转码
+- 功能: 上传音频文件,系统按照音频实际的播放速度连续发送音频到ASR后台,模拟实时ASR
+- 用途: 模拟实时转码,测试ASR后台的实时性能
+- 用法: 上传音频文件后,点击播放按扭
+- 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
+""")
+        audio = gr.Audio(label="Audio", sources=["upload"], type="filepath")
+        text = gr.HighlightedText(
+            label="Transcription",
+            interactive=False,
+            show_inline_category=False,
+            show_legend=False,
+            combine_adjacent=True,
+            color_map={"confirmed": "red", "unconfirmed": "green", "info": "gray"},
+        )
+        audio.play(
+            simulated_live_transcription.stream_audio_file,
+            inputs=[audio, model_dropdown, language_dropdown, temperature_slider],
+            outputs=[text],
+        )
+
+
+def create_gradio_demo(config: Config) -> gr.Blocks:
+    base_url = f"http://{config.host}:{config.port}"
+    openai_client = OpenAI(base_url=f"{base_url}/v1", api_key="cant-be-empty")
+    http_client = httpx.Client(base_url=base_url, timeout=TIMEOUT)
+    WEBSOCKET_URL_BASE = f"ws://{config.host}:{config.port}/v1/audio/transcriptions"
 
     def update_model_dropdown() -> gr.Dropdown:
         model_data = openai_client.models.list().data
@@ -302,27 +351,30 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 preload_models.click(fn_preload_models, inputs=[model_dropdown], outputs=[preload_models_reponse])
             with gr.Column():
                 with gr.Tab("Live Transcript Simulation"):
-                    gr.Markdown("""
-### 模拟实时转码
-- 功能: 上传音频文件,系统按照音频实际的播放速度连续发送音频到ASR后台,模拟实时ASR
-- 用途: 模拟实时转码,测试ASR后台的实时性能
-- 用法: 上传音频文件后,点击播放按扭
-- 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
-""")
-                    audio_file_simulation = gr.Audio(label="Audio", sources=["upload"], type="filepath")
-                    text_simulation_output = gr.HighlightedText(
-                        label="Transcription",
-                        interactive=False,
-                        show_inline_category=False,
-                        show_legend=False,
-                        combine_adjacent=True,
-                        color_map={"confirmed": "red", "unconfirmed": "green", "info": "gray"},
+                    simulated_live_transcription = SimulatedLiveTranscription.create_gradio_interface(
+                        config, model_dropdown, language_dropdown, temperature_slider
                     )
-                    audio_file_simulation.play(
-                        stream_audio_file,
-                        inputs=[audio_file_simulation, model_dropdown, language_dropdown, temperature_slider],
-                        outputs=[text_simulation_output],
-                    )
+                #                     gr.Markdown("""
+                # ### 模拟实时转码
+                # - 功能: 上传音频文件,系统按照音频实际的播放速度连续发送音频到ASR后台,模拟实时ASR
+                # - 用途: 模拟实时转码,测试ASR后台的实时性能
+                # - 用法: 上传音频文件后,点击播放按扭
+                # - 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
+                # """)
+                #                     audio_file_simulation = gr.Audio(label="Audio", sources=["upload"], type="filepath")
+                #                     text_simulation_output = gr.HighlightedText(
+                #                         label="Transcription",
+                #                         interactive=False,
+                #                         show_inline_category=False,
+                #                         show_legend=False,
+                #                         combine_adjacent=True,
+                #                         color_map={"confirmed": "red", "unconfirmed": "green", "info": "gray"},
+                #                     )
+                #                     audio_file_simulation.play(
+                #                         stream_audio_file,
+                #                         inputs=[audio_file_simulation, model_dropdown, language_dropdown, temperature_slider],
+                #                         outputs=[text_simulation_output],
+                #                     )
 
                 with gr.Tab("Offline Transcript"):
                     gr.Markdown("""
