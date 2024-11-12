@@ -1,23 +1,21 @@
-from typing import Tuple
 import asyncio
-import time
 from collections import deque
+from collections.abc import Generator
+import logging
 from pathlib import Path
-from typing import Generator
-from urllib import response
+import time
+import traceback
 from urllib.parse import urlencode
 
 import gradio as gr
 import httpx
-import websockets
 from httpx_sse import connect_sse
+import msgpack
 from openai import OpenAI
 from pydub import AudioSegment
-import traceback
+import websockets
 
 from faster_whisper_server.config import Config
-import logging
-import msgpack
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +265,6 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
 
         async def initialize_ws_connection(self, model, language, temperature):
             """Initialize the WebSocket connection based on session parameters."""
-
             queries = {
                 "response_format": "text",
                 "model": model,
@@ -307,10 +304,10 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 with gr.Tab("Live Transcript Simulation"):
                     gr.Markdown("""
 ### 模拟实时转码
-- 功能: 上传音频文件，系统按照音频实际的播放速度连续发送音频到ASR后台，模拟实时ASR
-- 用途: 模拟实时转码，测试ASR后台的实时性能
-- 用法: 上传音频文件后，点击播放按扭
-- 注意: 系统当前确认的结果用红色显示，未确认的结果用绿色显示
+- 功能: 上传音频文件,系统按照音频实际的播放速度连续发送音频到ASR后台,模拟实时ASR
+- 用途: 模拟实时转码,测试ASR后台的实时性能
+- 用法: 上传音频文件后,点击播放按扭
+- 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
 """)
                     audio_file_simulation = gr.Audio(label="Audio", sources=["upload"], type="filepath")
                     text_simulation_output = gr.HighlightedText(
@@ -330,9 +327,9 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 with gr.Tab("Offline Transcript"):
                     gr.Markdown("""
 ### 离线转码
-- 功能: 上传音频文件，系统一次性将音频发送到ASR后台处理，模拟离线转码
+- 功能: 上传音频文件,系统一次性将音频发送到ASR后台处理,模拟离线转码
 - 用途: 测试ASR后台的离线转码性能
-- 用法: 上传音频文件后，点击Start按扭
+- 用法: 上传音频文件后,点击Start按扭
 """)
                     audio_file_transcript = gr.Audio(type="filepath")
                     btn = gr.Button("Start")
@@ -346,10 +343,10 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 with gr.Tab("Live Transcript"):
                     gr.Markdown(
                         """### 实时转码
-- 功能: 读取麦克风信号，实时输出转码
+- 功能: 读取麦克风信号,实时输出转码
 - 用途: 演示实时转码功能
-- 用法: 点击麦克风图标开始接收音频，转码结果会实时显示在Transcription文本框中
-- 注意: 系统当前确认的结果用红色显示，未确认的结果用绿色显示
+- 用法: 点击麦克风图标开始接收音频,转码结果会实时显示在Transcription文本框中
+- 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
 """
                     )
                     streamer_state = gr.State(lambda: SessionAudioStreamer())
@@ -371,13 +368,13 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                             if audio_chunk is not None:
                                 await state.buffer_audio_chunk(audio_chunk, model, language, temperature)
                                 return gr.update(active=True)
-                        except Exception as e:
+                        except Exception:
                             return traceback.format_exc()
 
                     async def on_stop_recording(state: SessionAudioStreamer):
                         logger.info("Stopping session")
                         await state.pre_close()
-                        logger.info(f"Session closed")
+                        logger.info("Session closed")
 
                     async def on_tick(state: SessionAudioStreamer):
                         if state.is_closing:
