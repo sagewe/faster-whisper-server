@@ -395,20 +395,6 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                             (state.current_confirmed, "confirmed"),
                             (state.current_unconfirmed, "unconfirmed"),
                         ], gr.skip()
-                        # try:
-                        #     if state:
-                        #         await state.close()
-                        #         return [
-                        #             (state.current_confirmed, "confirmed"),
-                        #             (state.current_unconfirmed, "unconfirmed"),
-                        #         ]
-                        # except Exception as e:
-                        #     print(f"Error in on_stop: {e}")
-                        #     return [
-                        #         (state.current_confirmed, "confirmed"),
-                        #         (state.current_unconfirmed, "unconfirmed"),
-                        #         (f"\n\n{e}", "error"),
-                        #     ]
 
                     audio_live.stream(
                         fn=process_audio_stream,
@@ -416,7 +402,8 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                         outputs=timer,
                         show_progress=False,
                         api_name=None,
-                        time_limit=1,
+                        time_limit=30,
+                        stream_every=0.1,
                     )
                     audio_live.stop_recording(fn=on_stop_recording, inputs=[streamer_state])
                     timer.tick(fn=on_tick, inputs=[streamer_state], outputs=[text_live_output, timer])
