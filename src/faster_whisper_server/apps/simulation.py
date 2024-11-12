@@ -1,14 +1,14 @@
+from typing import Tuple
 import asyncio
-import re
 import time
 from collections import deque
 from pathlib import Path
 from typing import Generator
+from urllib import response
 from urllib.parse import urlencode
 
 import gradio as gr
 import httpx
-import numpy as np
 import websockets
 from httpx_sse import connect_sse
 from openai import OpenAI
@@ -49,15 +49,6 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
     http_client = httpx.Client(base_url=base_url, timeout=TIMEOUT)
     WEBSOCKET_URL_BASE = f"ws://{config.host}:{config.port}/v1/audio/transcriptions"
 
-    async def receive_responses(ws):
-        """Receive responses from the WebSocket server asynchronously."""
-        try:
-            while True:
-                response = await ws.recv()
-                yield response
-        except websockets.ConnectionClosed:
-            return
-
     async def stream_audio(ws, audio_file_path):
         """Stream audio from the specified file to the WebSocket server."""
         audio = AudioSegment.from_file(audio_file_path).set_frame_rate(SAMPLES_RATE).set_channels(1)
@@ -83,16 +74,24 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
         if language != "auto":
             queries["language"] = language
         url = f"{WEBSOCKET_URL_BASE}?{urlencode(queries)}"
+        confirmed = ""
         async with websockets.connect(url) as ws:
             stream_task = asyncio.create_task(stream_audio(ws, audio_file))
 
-            async for response in receive_responses(ws):
-                last_packet_response_time = time.perf_counter()
-                yield "###Transcripts:\n" + response
-
+            try:
+                while True:
+                    response = msgpack.unpackb(await ws.recv())
+                    last_packet_response_time = time.perf_counter()
+                    confirmed, unconfirmed = response["confirmed"], response["unconfirmed"]
+                    yield [(confirmed, "confirmed"), (unconfirmed, "unconfirmed")]
+            except websockets.ConnectionClosed:
+                pass
             last_packet_request_time = await stream_task
 
-        yield f"### Transcripts:\n{response}\n### Statistics:\nLatency: {(last_packet_response_time - last_packet_request_time) * 1000:.1f} ms"
+        yield [
+            (confirmed, "confirmed"),
+            (f"\nLatency: {(last_packet_response_time - last_packet_request_time) * 1000:.1f} ms", "info"),
+        ]
 
     def update_model_dropdown() -> gr.Dropdown:
         model_data = openai_client.models.list().data
@@ -187,7 +186,8 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             self.ws_established = asyncio.Event()
             self.send_task = None
             self.receive_task = None
-            self.current_response = ""  # 存储最新的响应
+            self.current_confirmed = ""
+            self.current_unconfirmed = ""
             self.is_closing = False  # 添加关闭标志
 
         async def close(self):
@@ -199,7 +199,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 try:
                     if self.ws_connection and self.buffer:
                         combined_data = b"".join(self.buffer)
-                        await self.ws_connection.send(combined_data)
+                        await self.ws_connection.send(msgpack.packb({"data": combined_data}))
                         self.buffer.clear()
                 except Exception as e:
                     logger.error(f"Error sending final buffer: {e}")
@@ -215,8 +215,6 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                     self.receive_task.cancel()
                 if self.ws_connection:
                     await self.ws_connection.close()
-
-            return self.current_response  # 返回最终的响应
 
         async def _send_buffer(self):
             logger.info("Starting to send buffer")
@@ -242,9 +240,10 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             while True:
                 if self.ws_connection:
                     try:
-                        response = await self.ws_connection.recv()
+                        response = msgpack.unpackb(await self.ws_connection.recv())
                         logger.info(f"received response: {response}")
-                        self.current_response = response
+                        self.current_confirmed = response["confirmed"]
+                        self.current_unconfirmed = response["unconfirmed"]
                     except websockets.ConnectionClosed:
                         logger.info("WebSocket connection closed")
                         break
@@ -285,10 +284,6 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
         models = gr.State({})
         gr.Markdown("""
 # ASR 演示系统
-本系统支持三种演示模式：
-1. 实时模拟：上传音频文件，系统实际音频的播放速度连续发送音频到ASR后台，模拟实时ASR
-2. 音频转码：上传音频文件，系统一次性将音频发送到ASR后台处理，模拟离线转码
-3. 实时演示：直接读取麦克风信号，进行实时转码
 """)
         with gr.Row():
             with gr.Column():
@@ -308,16 +303,36 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 )
                 preload_models.click(fn_preload_models, inputs=[model_dropdown], outputs=[preload_models_reponse])
             with gr.Column():
-                with gr.Tab("Audio Live Simulation"):
+                with gr.Tab("Live Transcript Simulation"):
+                    gr.Markdown("""
+### 模拟实时转码
+- 功能: 上传音频文件，系统按照音频实际的播放速度连续发送音频到ASR后台，模拟实时ASR
+- 用途: 模拟实时转码，测试ASR后台的实时性能
+- 用法: 上传音频文件后，点击播放按扭
+- 注意: 系统当前确认的结果用红色显示，未确认的结果用绿色显示
+""")
                     audio_file_simulation = gr.Audio(label="Audio", sources=["upload"], type="filepath")
-                    text_simulation_output = gr.Markdown(label="Transcription", show_label=True, rtl=True)
+                    text_simulation_output = gr.HighlightedText(
+                        label="Transcription",
+                        interactive=False,
+                        show_inline_category=False,
+                        show_legend=False,
+                        combine_adjacent=True,
+                        color_map={"confirmed": "red", "unconfirmed": "green", "info": "gray"},
+                    )
                     audio_file_simulation.play(
                         stream_audio_file,
                         inputs=[audio_file_simulation, model_dropdown, language_dropdown, temperature_slider],
                         outputs=[text_simulation_output],
                     )
 
-                with gr.Tab("Audio Transcript"):
+                with gr.Tab("Offline Transcript"):
+                    gr.Markdown("""
+### 离线转码
+- 功能: 上传音频文件，系统一次性将音频发送到ASR后台处理，模拟离线转码
+- 用途: 测试ASR后台的离线转码性能
+- 用法: 上传音频文件后，点击Start按扭
+""")
                     audio_file_transcript = gr.Audio(type="filepath")
                     btn = gr.Button("Start")
                     text_transcription_output = gr.Textbox(label="Transcription", interactive=False, rtl=True)
@@ -327,31 +342,53 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                         outputs=[text_transcription_output],
                     )
 
-                with gr.Tab("Live"):
+                with gr.Tab("Live Transcript"):
+                    gr.Markdown(
+                        """### 实时转码
+- 功能: 读取麦克风信号，实时输出转码
+- 用途: 演示实时转码功能
+- 用法: 点击麦克风图标开始接收音频，转码结果会实时显示在Transcription文本框中
+- 注意: 系统当前确认的结果用红色显示，未确认的结果用绿色显示
+"""
+                    )
                     streamer_state = gr.State(lambda: SessionAudioStreamer())
                     audio_live = gr.Audio(sources=["microphone"], type="numpy", streaming=True)
-                    text_live_output = gr.Textbox(label="Transcription", interactive=False, rtl=True)
+                    text_live_output = gr.HighlightedText(
+                        label="Transcription",
+                        interactive=False,
+                        show_inline_category=False,
+                        show_legend=False,
+                        combine_adjacent=True,
+                        color_map={"confirmed": "red", "unconfirmed": "green", "info": "gray"},
+                    )
 
                     async def process_audio_stream(
                         audio_chunk, state: SessionAudioStreamer, model, language, temperature
-                    ):
+                    ) -> Tuple[str, str]:
                         try:
                             if audio_chunk is None:
-                                return ""
+                                return "", ""
 
                             await state.buffer_audio_chunk(audio_chunk, model, language, temperature)
-                            return state.current_response
+                            return [(state.current_confirmed, "confirmed"), (state.current_unconfirmed, "unconfirmed")]
                         except Exception as e:
                             return traceback.format_exc()
 
                     async def on_stop(state: SessionAudioStreamer):
                         try:
                             if state:
-                                final_response = await state.close()
-                                return final_response  # 返回最终响应
+                                await state.close()
+                                return [
+                                    (state.current_confirmed, "confirmed"),
+                                    (state.current_unconfirmed, "unconfirmed"),
+                                ]
                         except Exception as e:
                             print(f"Error in on_stop: {e}")
-                            return str(e)
+                            return [
+                                (state.current_confirmed, "confirmed"),
+                                (state.current_unconfirmed, "unconfirmed"),
+                                (f"\n\n{e}", "error"),
+                            ]
 
                     audio_live.stream(
                         fn=process_audio_stream,
@@ -364,13 +401,14 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
 
                     audio_live.stop_recording(fn=on_stop, inputs=[streamer_state], outputs=text_live_output)
 
+                # TODO: HighlightedText does not support RTL, show we contribute to Gradio?
                 def fn_update_rtl(language_dropdown):
                     rtl = language_dropdown == "ar"
-                    return gr.update(rtl=rtl), gr.update(rtl=rtl), gr.update(rtl=rtl)
+                    return gr.update(rtl=rtl)
 
                 language_dropdown.change(
                     fn_update_rtl,
                     inputs=[language_dropdown],
-                    outputs=[text_simulation_output, text_transcription_output, text_live_output],
+                    outputs=[text_transcription_output],
                 )
     return iface

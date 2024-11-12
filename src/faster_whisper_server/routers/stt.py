@@ -302,7 +302,9 @@ async def transcribe_stream(
         audio_stream = AudioStream()
         async with asyncio.TaskGroup() as tg:
             tg.create_task(audio_receiver(ws, audio_stream))
-            async for transcription in audio_transcriber(asr, audio_stream, min_duration=config.min_duration):
+            async for is_updated, transcription, unconfirmed in audio_transcriber(
+                asr, audio_stream, min_duration=config.min_duration
+            ):
                 logger.debug(f"Sending transcription: {transcription.text}")
                 if ws.client_state == WebSocketState.DISCONNECTED:
                     break
@@ -311,7 +313,10 @@ async def transcribe_stream(
 
                 start = time.time()
                 if response_format == ResponseFormat.TEXT:
-                    await ws.send_text(transcription.text)
+                    # await ws.send_text(transcription.text)
+                    await ws.send_bytes(
+                        msgpack.packb({"confirmed": transcription.text, "unconfirmed": unconfirmed.text})
+                    )
                 elif response_format == ResponseFormat.JSON:
                     await ws.send_json(CreateTranscriptionResponseJson.from_transcription(transcription).model_dump())
                 elif response_format == ResponseFormat.VERBOSE_JSON:

@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from annotated_types import T
+
 from faster_whisper_server.audio import Audio, AudioStream
 from faster_whisper_server.text_utils import Transcription, common_prefix, to_full_sentences, word_to_text
 
@@ -65,12 +67,13 @@ async def audio_transcriber(
         new_words = local_agreement.merge(confirmed, transcription)
         if len(new_words) > 0:
             confirmed.extend(new_words)
-            yield confirmed
+            yield True, confirmed, local_agreement.unconfirmed
         else:
             logger.debug("No new words")
+            yield False, confirmed, local_agreement.unconfirmed
     logger.debug("Flushing...")
     confirmed.extend(local_agreement.unconfirmed.words)
-    yield confirmed
+    yield True, confirmed, Transcription()
     logger.info("Audio transcriber finished")
     logger.warning(
         f"Last chunk received at {last_chunk_time}, it has been {time.time() - last_chunk_time} seconds since then"
