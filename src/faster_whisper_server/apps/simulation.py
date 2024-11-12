@@ -29,6 +29,7 @@ MODEL_LOAD_ENDPOINT = "/api/ps"
 TRANSLATION_ENDPOINT = "/v1/audio/translations"
 TIMEOUT_SECONDS = 180
 TIMEOUT = httpx.Timeout(timeout=TIMEOUT_SECONDS)
+TRANSCRIPTION_UPDATE_INTERVAL = 0.1
 
 css = """
 #rtl-textbox1{
@@ -188,33 +189,33 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             self.receive_task = None
             self.current_confirmed = ""
             self.current_unconfirmed = ""
-            self.is_closing = False  # 添加关闭标志
+            self.is_closing = False
+            self.close_timeout = 3.0
 
-        async def close(self):
-            """优雅关闭连接"""
+        async def pre_close(self):
             self.is_closing = True
 
-            # 1. 等待缓冲区发送完成
-            if self.buffer:
-                try:
+            try:
+                if self.buffer:
                     if self.ws_connection and self.buffer:
                         combined_data = b"".join(self.buffer)
                         await self.ws_connection.send(msgpack.packb({"data": combined_data}))
                         self.buffer.clear()
-                except Exception as e:
-                    logger.error(f"Error sending final buffer: {e}")
 
-            # 2. 等待5秒接收最后的响应
+                await self.ws_connection.send(msgpack.packb({"stop": True}))
+            except Exception as e:
+                logger.error(f"Error sending final buffer: {e}")
+
+        async def close(self):
             try:
-                await asyncio.sleep(5)
-            finally:
-                # 3. 取消任务并关闭连接
                 if self.send_task:
                     self.send_task.cancel()
                 if self.receive_task:
                     self.receive_task.cancel()
                 if self.ws_connection:
                     await self.ws_connection.close()
+            except Exception as e:
+                logger.error(f"Error closing connection: {e}")
 
         async def _send_buffer(self):
             logger.info("Starting to send buffer")
@@ -353,6 +354,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                     )
                     streamer_state = gr.State(lambda: SessionAudioStreamer())
                     audio_live = gr.Audio(sources=["microphone"], type="numpy", streaming=True)
+                    timer = gr.Timer(value=TRANSCRIPTION_UPDATE_INTERVAL, active=False)
                     text_live_output = gr.HighlightedText(
                         label="Transcription",
                         interactive=False,
@@ -364,42 +366,60 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
 
                     async def process_audio_stream(
                         audio_chunk, state: SessionAudioStreamer, model, language, temperature
-                    ) -> Tuple[str, str]:
+                    ):
                         try:
-                            if audio_chunk is None:
-                                return "", ""
-
-                            await state.buffer_audio_chunk(audio_chunk, model, language, temperature)
-                            return [(state.current_confirmed, "confirmed"), (state.current_unconfirmed, "unconfirmed")]
+                            if audio_chunk is not None:
+                                await state.buffer_audio_chunk(audio_chunk, model, language, temperature)
+                                return gr.update(active=True)
                         except Exception as e:
                             return traceback.format_exc()
 
-                    async def on_stop(state: SessionAudioStreamer):
-                        try:
-                            if state:
-                                await state.close()
-                                return [
-                                    (state.current_confirmed, "confirmed"),
-                                    (state.current_unconfirmed, "unconfirmed"),
-                                ]
-                        except Exception as e:
-                            print(f"Error in on_stop: {e}")
+                    async def on_stop_recording(state: SessionAudioStreamer):
+                        logger.info("Stopping session")
+                        await state.pre_close()
+                        logger.info(f"Session closed")
+
+                    async def on_tick(state: SessionAudioStreamer):
+                        if state.is_closing:
+                            state.close_timeout -= TRANSCRIPTION_UPDATE_INTERVAL
+
+                        if state.close_timeout <= 0:
+                            logger.info("stop timer")
+                            await state.close()
                             return [
                                 (state.current_confirmed, "confirmed"),
                                 (state.current_unconfirmed, "unconfirmed"),
-                                (f"\n\n{e}", "error"),
-                            ]
+                            ], gr.update(active=False)
+
+                        return [
+                            (state.current_confirmed, "confirmed"),
+                            (state.current_unconfirmed, "unconfirmed"),
+                        ], gr.skip()
+                        # try:
+                        #     if state:
+                        #         await state.close()
+                        #         return [
+                        #             (state.current_confirmed, "confirmed"),
+                        #             (state.current_unconfirmed, "unconfirmed"),
+                        #         ]
+                        # except Exception as e:
+                        #     print(f"Error in on_stop: {e}")
+                        #     return [
+                        #         (state.current_confirmed, "confirmed"),
+                        #         (state.current_unconfirmed, "unconfirmed"),
+                        #         (f"\n\n{e}", "error"),
+                        #     ]
 
                     audio_live.stream(
                         fn=process_audio_stream,
                         inputs=[audio_live, streamer_state, model_dropdown, language_dropdown, temperature_slider],
-                        outputs=text_live_output,
+                        outputs=timer,
                         show_progress=False,
                         api_name=None,
                         time_limit=1,
                     )
-
-                    audio_live.stop_recording(fn=on_stop, inputs=[streamer_state], outputs=text_live_output)
+                    audio_live.stop_recording(fn=on_stop_recording, inputs=[streamer_state])
+                    timer.tick(fn=on_tick, inputs=[streamer_state], outputs=[text_live_output, timer])
 
                 # TODO: HighlightedText does not support RTL, show we contribute to Gradio?
                 def fn_update_rtl(language_dropdown):
