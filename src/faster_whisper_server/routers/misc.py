@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from fastapi import (
-    APIRouter,
-    Response,
-)
 import huggingface_hub
+from fastapi import APIRouter, Response
 from huggingface_hub.hf_api import RepositoryNotFoundError
 
 from faster_whisper_server import hf_utils

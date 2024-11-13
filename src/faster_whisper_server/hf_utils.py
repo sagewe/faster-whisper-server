@@ -1,7 +1,7 @@
-from collections.abc import Generator
 import logging
-from pathlib import Path
 import typing
+from collections.abc import Generator
+from pathlib import Path
 
 import huggingface_hub
 

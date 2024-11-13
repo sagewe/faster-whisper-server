@@ -1,25 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-from io import BytesIO
 import logging
+from io import BytesIO
 from tracemalloc import start
 from typing import TYPE_CHECKING, Annotated
 
-from fastapi import (
-    APIRouter,
-    Form,
-    Query,
-    Request,
-    Response,
-    UploadFile,
-    WebSocket,
-    WebSocketDisconnect,
-)
+import faster_whisper
+import msgpack
+from fastapi import APIRouter, Form, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from fastapi.websockets import WebSocketState
 from faster_whisper.vad import VadOptions, get_speech_timestamps
-import msgpack
 from pydantic import AfterValidator, Field
 from sympy import im
 
@@ -33,16 +25,10 @@ from faster_whisper_server.api_models import (
 )
 from faster_whisper_server.asr import FasterWhisperASR
 from faster_whisper_server.audio import AudioStream, audio_samples_from_file
-from faster_whisper_server.config import (
-    SAMPLES_PER_SECOND,
-    Language,
-    ResponseFormat,
-    Task,
-)
+from faster_whisper_server.config import SAMPLES_PER_SECOND, Language, ResponseFormat, Task
 from faster_whisper_server.dependencies import ConfigDependency, ModelManagerDependency, get_config
 from faster_whisper_server.text_utils import segments_to_srt, segments_to_text, segments_to_vtt
 from faster_whisper_server.transcriber import audio_transcriber
-import faster_whisper
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable

@@ -4,10 +4,10 @@ from typing import Generator
 from urllib import response
 from urllib.parse import urlencode
 
-from click import confirm
 import httpx
 import msgpack
 import websockets
+from click import confirm
 from httpx_sse import connect_sse
 from pydub import AudioSegment
 

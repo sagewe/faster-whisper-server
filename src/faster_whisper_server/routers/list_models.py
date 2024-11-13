@@ -1,22 +1,15 @@
 from __future__ import annotations
 
-import os
 import logging
+import os
 import pathlib
 from typing import TYPE_CHECKING, Annotated
 from venv import logger
 
-from fastapi import (
-    APIRouter,
-    HTTPException,
-    Path,
-)
 import huggingface_hub
+from fastapi import APIRouter, HTTPException, Path
 
-from faster_whisper_server.api_models import (
-    ListModelsResponse,
-    Model,
-)
+from faster_whisper_server.api_models import ListModelsResponse, Model
 from faster_whisper_server.dependencies import ConfigDependency
 
 if TYPE_CHECKING:

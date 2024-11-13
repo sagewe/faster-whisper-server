@@ -1,25 +1,17 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
-from fastapi import (
-    FastAPI,
-)
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from faster_whisper_server.dependencies import get_config, get_model_manager
 from faster_whisper_server.logger import setup_logger
-from faster_whisper_server.routers.list_models import (
-    router as list_models_router,
-)
-from faster_whisper_server.routers.misc import (
-    router as misc_router,
-)
-from faster_whisper_server.routers.stt import (
-    router as stt_router,
-)
+from faster_whisper_server.routers.list_models import router as list_models_router
+from faster_whisper_server.routers.misc import router as misc_router
+from faster_whisper_server.routers.stt import router as stt_router
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator

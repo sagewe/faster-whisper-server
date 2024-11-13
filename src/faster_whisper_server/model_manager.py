@@ -1,22 +1,19 @@
 from __future__ import annotations
 
-from collections import OrderedDict
 import gc
 import logging
+import os
 import threading
 import time
+from collections import OrderedDict
 from typing import TYPE_CHECKING
-
-import os
 
 from faster_whisper import WhisperModel
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from faster_whisper_server.config import (
-        WhisperConfig,
-    )
+    from faster_whisper_server.config import WhisperConfig
 
 logger = logging.getLogger(__name__)
 
