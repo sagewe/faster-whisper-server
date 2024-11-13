@@ -1,5 +1,4 @@
-import contextlib
-import re
+import logging
 from typing import Generator
 from urllib import response
 from urllib.parse import urlencode
@@ -7,9 +6,11 @@ from urllib.parse import urlencode
 import httpx
 import msgpack
 import websockets
-from click import confirm
 from httpx_sse import connect_sse
 from pydub import AudioSegment
+
+
+logger = logging.getLogger(__name__)
 
 TRANSCRIPTION_ENDPOINT = "/v1/audio/transcriptions"
 TIMEOUT_SECONDS = 180
@@ -50,6 +51,7 @@ class WebSocketTranscriberClient:
         await self.ws.send(msgpack.packb({"data": raw_data}))
 
     async def send_stop_command(self):
+        logger.info("Sending stop command")
         await self.ws.send(msgpack.packb({"stop": True}))
 
     async def receive_response(self):

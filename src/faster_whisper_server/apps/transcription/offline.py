@@ -24,7 +24,7 @@ class OfflineTranscription:
                 yield self.http_client.post(model, language, temperature, file)
 
     @classmethod
-    def create_gradio_interface(cls, config: Config, model_dropdown, temperature_slider, stream_checkbox):
+    def create_gradio_interface(cls, config: Config, model_dropdown, language, temperature_slider, stream_checkbox):
         offline_transcription = cls(config.host, config.port)
         gr.Markdown("""
 ### 离线转码
@@ -34,9 +34,25 @@ class OfflineTranscription:
 """)
         audio = gr.Audio(type="filepath")
         btn = gr.Button("Start")
-        text = gr.Textbox(label="Transcription", interactive=False, rtl=True)
+        text = gr.Textbox(label="Transcription", interactive=False)
         btn.click(
             offline_transcription.on_click,
-            inputs=[audio, model_dropdown, temperature_slider, stream_checkbox],
+            inputs=[audio, model_dropdown, language, temperature_slider, stream_checkbox],
             outputs=[text],
         )
+        with gr.Accordion(open=False, label="Compare"):
+            from difflib import Differ
+
+            ground_truth = gr.Textbox(label="Ground Truth")
+            compare_btn = gr.Button("Compare")
+            diff = gr.HighlightedText(combine_adjacent=True, label="Diff")
+
+            def diff_texts(text1, text2):
+                d = Differ()
+                return [(token[2:], token[0] if token[0] != " " else None) for token in d.compare(text1, text2)]
+
+            compare_btn.click(
+                diff_texts,
+                inputs=[text, ground_truth],
+                outputs=[diff],
+            )

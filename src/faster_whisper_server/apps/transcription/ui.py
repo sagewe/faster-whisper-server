@@ -173,14 +173,14 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                     update_language_dropdown, inputs=[model_dropdown, models], outputs=[language_dropdown]
                 )
                 preload_models.click(fn_preload_models, inputs=[model_dropdown], outputs=[preload_models_reponse])
-            with gr.Column():
+            with gr.Column(scale=3):
                 with gr.Tab("Live Transcript Simulation"):
                     simulated_live_transcription = SimulatedLiveTranscription.create_gradio_interface(
                         config, model_dropdown, language_dropdown, temperature_slider
                     )
                 with gr.Tab("Offline Transcript"):
                     offline_transcription = OfflineTranscription.create_gradio_interface(
-                        config, model_dropdown, temperature_slider, stream_checkbox
+                        config, model_dropdown, language_dropdown, temperature_slider, stream_checkbox
                     )
 
                 with gr.Tab("Live Transcript"):

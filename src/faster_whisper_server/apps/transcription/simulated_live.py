@@ -1,13 +1,25 @@
 import asyncio
+import logging
 import time
 
 import gradio as gr
+from gradio_client import file
 import websockets
 from pydub import AudioSegment
 
 from faster_whisper_server.apps.transcription.client import WebSocketTranscriberClient
 from faster_whisper_server.apps.transcription.const import CHUNK_TIME, SAMPLES_RATE
 from faster_whisper_server.config import Config
+
+logger = logging.getLogger(__name__)
+
+DESCRIPTION = """
+### 模拟实时转码
+- 功能: 上传音频文件,系统按照音频实际的播放速度连续发送音频到ASR后台,模拟实时ASR
+- 用途: 模拟实时转码,测试ASR后台的实时性能
+- 用法: 上传音频文件后,点击播放按扭
+- 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
+"""
 
 
 class SimulatedLiveTranscription:
@@ -18,6 +30,7 @@ class SimulatedLiveTranscription:
         self.channel = channel
 
     async def stream_audio(self, audio_file_path):
+        logger.info(f"Streaming audio file: {audio_file_path}")
         audio = AudioSegment.from_file(audio_file_path).set_frame_rate(self.sample_rate).set_channels(self.channel)
         start = time.perf_counter()
         time_per_chunk_s = self.chunk_time_ms / 1000.0
@@ -49,8 +62,6 @@ class SimulatedLiveTranscription:
         finally:
             await self.ws_client.disconnect()
 
-        with open(f"results/{audio_file}.txt", "w") as f:
-            f.write(confirmed)
         yield [
             (confirmed, "confirmed"),
             (f"\nLatency: {(last_chunk_response_time - last_packet_request_time) * 1000:.1f} ms", "info"),
@@ -59,14 +70,7 @@ class SimulatedLiveTranscription:
     @classmethod
     def create_gradio_interface(cls, config: Config, model_dropdown, language_dropdown, temperature_slider):
         simulated_live_transcription = cls(config.host, config.port)
-
-        gr.Markdown("""
-### 模拟实时转码
-- 功能: 上传音频文件,系统按照音频实际的播放速度连续发送音频到ASR后台,模拟实时ASR
-- 用途: 模拟实时转码,测试ASR后台的实时性能
-- 用法: 上传音频文件后,点击播放按扭
-- 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
-""")
+        gr.Markdown(DESCRIPTION)
         audio = gr.Audio(label="Audio", sources=["upload"], type="filepath")
         text = gr.HighlightedText(
             label="Transcription",
