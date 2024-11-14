@@ -13,14 +13,12 @@ DESCRIPTION = I18nText(
     """
 ### 离线转码
 - 功能: 上传音频文件,系统一次性将音频发送到ASR后台处理,模拟离线转码
-- 用途: 测试ASR后台的离线转码性能
-- 用法: 上传音频文件后,点击开始按扭
+- 用途: 测试ASR后台的离线转码性能, 上传音频文件后, 点击开始按扭
 """,
     """
 ### Offline Transcription
 - Function: Upload an audio file, the system sends the audio to the ASR backend for processing at once, simulating offline transcoding
-- Usage: Test the performance of offline transcoding of the ASR backend
-- Usage: Upload an audio file, click the Start button
+- Usage: Test the performance of offline transcoding of the ASR backend, upload an audio file, click the Start button
 """,
 )
 
@@ -37,9 +35,9 @@ class OfflineTranscription:
                 previous_transcription = ""
                 for text in self.http_client.sse_post(model, language, temperature, file):
                     previous_transcription += text
-                    yield previous_transcription
+                    yield [(previous_transcription, "confirmed")]
             else:
-                yield self.http_client.post(model, language, temperature, file)
+                yield [(self.http_client.post(model, language, temperature, file), "confirmed")]
 
     @classmethod
     def create_gradio_interface(cls, config: Config, model_dropdown, language, temperature_slider, stream_checkbox):
@@ -47,7 +45,7 @@ class OfflineTranscription:
         gr.Markdown(DESCRIPTION)
         audio = gr.Audio(type="filepath")
         btn = gr.Button(I18nText("开始", "Start"))
-        text = gr.Textbox(
+        text = gr.HighlightedText(
             label=I18nText(
                 "识别结果(红色为当前确认结果,绿色为未确认结果)",
                 "Transcription (Red for current confirmed, Green for unconfirmed)",
@@ -63,4 +61,4 @@ class OfflineTranscription:
             inputs=[audio, model_dropdown, language, temperature_slider, stream_checkbox],
             outputs=[text],
         )
-        add_compare_ui(text)
+        # add_compare_ui(text)

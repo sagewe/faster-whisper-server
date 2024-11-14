@@ -103,14 +103,12 @@ class SessionAudioStreamer:
 DESCRIPTION = I18nText(
     """### 实时转码
 - 功能: 读取麦克风信号,实时输出转码
-- 用途: 演示实时转码功能
-- 用法: 点击麦克风图标开始接收音频,转码结果会实时显示在Transcription文本框中
+- 用途: 演示实时转码功能, 点击麦克风图标开始接收音频
 - 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
 """,
     """### Live Transcription
 - Function: Read microphone signal, output transcoding in real time
-- Usage: Demonstrate real-time transcoding function
-- Usage: Click the microphone icon to start receiving audio, and the transcoding result will be displayed in the Transcription text box in real time
+- Usage: Demonstrate real-time transcoding function, click the microphone icon to start receiving audio
 - Note: The current confirmed result is displayed in red, and the unconfirmed result is displayed in green
 """,
 )
@@ -184,4 +182,4 @@ class LiveTranscription:
         )
         audio_live.stop_recording(fn=on_stop_recording, inputs=[streamer_state])
         timer.tick(fn=on_tick, inputs=[streamer_state], outputs=[text_live_output, timer])
-        add_compare_ui(text_live_output, is_heighlighted=True)
+        # add_compare_ui(text_live_output, is_heighlighted=True)
