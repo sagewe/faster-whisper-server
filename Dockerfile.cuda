@@ -15,8 +15,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-install-project
-COPY ./src ./pyproject.toml ./uv.lock ./
+COPY ./src ./pyproject.toml ./cudnn8/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
+    sed -i 's/ctranslate2==4\.5\.0/ctranslate2==4.4.0/g' pyproject.toml && \
     uv sync --frozen --extra ui
 ENV WHISPER__MODEL=Systran/faster-whisper-large-v3
 ENV UVICORN_HOST=0.0.0.0
