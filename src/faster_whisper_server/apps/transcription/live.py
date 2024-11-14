@@ -100,6 +100,22 @@ class SessionAudioStreamer:
         logger.info("WebSocket connection established for session")
 
 
+DESCRIPTION = I18nText(
+    """### 实时转码
+- 功能: 读取麦克风信号,实时输出转码
+- 用途: 演示实时转码功能
+- 用法: 点击麦克风图标开始接收音频,转码结果会实时显示在Transcription文本框中
+- 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
+""",
+    """### Live Transcription
+- Function: Read microphone signal, output transcoding in real time
+- Usage: Demonstrate real-time transcoding function
+- Usage: Click the microphone icon to start receiving audio, and the transcoding result will be displayed in the Transcription text box in real time
+- Note: The current confirmed result is displayed in red, and the unconfirmed result is displayed in green
+""",
+)
+
+
 class LiveTranscription:
     def __init__(self, host, port):
         self.host = host
@@ -109,14 +125,7 @@ class LiveTranscription:
     def create_gradio_interface(cls, config: Config, model_dropdown, language_dropdown, temperature_slider):
         live_transcription = cls(config.host, config.port)
 
-        gr.Markdown(
-            """### 实时转码
-- 功能: 读取麦克风信号,实时输出转码
-- 用途: 演示实时转码功能
-- 用法: 点击麦克风图标开始接收音频,转码结果会实时显示在Transcription文本框中
-- 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
-"""
-        )
+        gr.Markdown(DESCRIPTION)
         streamer_state = gr.State(
             lambda: SessionAudioStreamer(host=live_transcription.host, port=live_transcription.port)
         )

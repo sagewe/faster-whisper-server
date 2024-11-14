@@ -9,6 +9,21 @@ from faster_whisper_server.apps.transcription.compare import add_compare_ui
 from faster_whisper_server.apps.transcription.i18n import I18nText
 from faster_whisper_server.config import Config
 
+DESCRIPTION = I18nText(
+    """
+### 离线转码
+- 功能: 上传音频文件,系统一次性将音频发送到ASR后台处理,模拟离线转码
+- 用途: 测试ASR后台的离线转码性能
+- 用法: 上传音频文件后,点击开始按扭
+""",
+    """
+### Offline Transcription
+- Function: Upload an audio file, the system sends the audio to the ASR backend for processing at once, simulating offline transcoding
+- Usage: Test the performance of offline transcoding of the ASR backend
+- Usage: Upload an audio file, click the Start button
+""",
+)
+
 
 class OfflineTranscription:
     def __init__(self, host, port):
@@ -29,12 +44,7 @@ class OfflineTranscription:
     @classmethod
     def create_gradio_interface(cls, config: Config, model_dropdown, language, temperature_slider, stream_checkbox):
         offline_transcription = cls(config.host, config.port)
-        gr.Markdown("""
-### 离线转码
-- 功能: 上传音频文件,系统一次性将音频发送到ASR后台处理,模拟离线转码
-- 用途: 测试ASR后台的离线转码性能
-- 用法: 上传音频文件后,点击Start按扭
-""")
+        gr.Markdown(DESCRIPTION)
         audio = gr.Audio(type="filepath")
         btn = gr.Button(I18nText("开始", "Start"))
         text = gr.Textbox(

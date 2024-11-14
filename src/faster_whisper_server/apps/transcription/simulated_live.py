@@ -14,13 +14,22 @@ from faster_whisper_server.config import Config
 
 logger = logging.getLogger(__name__)
 
-DESCRIPTION = """
+DESCRIPTION = I18nText(
+    """
 ### 模拟实时转码
 - 功能: 上传音频文件,系统按照音频实际的播放速度连续发送音频到ASR后台,模拟实时ASR
 - 用途: 模拟实时转码,测试ASR后台的实时性能
 - 用法: 上传音频文件后,点击播放按扭
 - 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
-"""
+""",
+    """
+### Simulated Live Transcription
+- Function: Upload an audio file, the system will send audio to the ASR backend continuously according to the actual playback speed of the audio, simulating real-time ASR
+- Usage: Simulate real-time transcoding, test the real-time performance of the ASR backend
+- Usage: Upload an audio file, click the play button
+- Note: The current confirmed result is displayed in red, and the unconfirmed result is displayed in green
+""",
+)
 
 
 class SimulatedLiveTranscription:
