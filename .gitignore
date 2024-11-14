@@ -178,3 +178,5 @@ esic/
 apy_data/
 whisper-large-v3-turbo/
 outputs
+Justfile
+*.ipynb
