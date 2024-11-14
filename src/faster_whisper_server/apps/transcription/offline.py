@@ -1,9 +1,12 @@
 from collections.abc import Generator
 from pathlib import Path
+from re import I
 
 import gradio as gr
 
 from faster_whisper_server.apps.transcription.client import HttpTranscriberClient
+from faster_whisper_server.apps.transcription.compare import add_compare_ui
+from faster_whisper_server.apps.transcription.i18n import I18nText
 from faster_whisper_server.config import Config
 
 
@@ -33,26 +36,21 @@ class OfflineTranscription:
 - 用法: 上传音频文件后,点击Start按扭
 """)
         audio = gr.Audio(type="filepath")
-        btn = gr.Button("Start")
-        text = gr.Textbox(label="Transcription", interactive=False)
+        btn = gr.Button(I18nText("开始", "Start"))
+        text = gr.Textbox(
+            label=I18nText(
+                "识别结果(红色为当前确认结果,绿色为未确认结果)",
+                "Transcription (Red for current confirmed, Green for unconfirmed)",
+            ),
+            interactive=False,
+            show_inline_category=False,
+            show_legend=False,
+            combine_adjacent=True,
+            color_map={"confirmed": "red", "unconfirmed": "green", "info": "gray"},
+        )
         btn.click(
             offline_transcription.on_click,
             inputs=[audio, model_dropdown, language, temperature_slider, stream_checkbox],
             outputs=[text],
         )
-        with gr.Accordion(open=False, label="Compare"):
-            from difflib import Differ
-
-            ground_truth = gr.Textbox(label="Ground Truth")
-            compare_btn = gr.Button("Compare")
-            diff = gr.HighlightedText(combine_adjacent=True, label="Diff")
-
-            def diff_texts(text1, text2):
-                d = Differ()
-                return [(token[2:], token[0] if token[0] != " " else None) for token in d.compare(text1, text2)]
-
-            compare_btn.click(
-                diff_texts,
-                inputs=[text, ground_truth],
-                outputs=[diff],
-            )
+        add_compare_ui(text)

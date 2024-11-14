@@ -9,7 +9,6 @@ import websockets
 from httpx_sse import connect_sse
 from pydub import AudioSegment
 
-
 logger = logging.getLogger(__name__)
 
 TRANSCRIPTION_ENDPOINT = "/v1/audio/transcriptions"

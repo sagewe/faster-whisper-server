@@ -3,12 +3,13 @@ import logging
 import time
 
 import gradio as gr
-from gradio_client import file
 import websockets
 from pydub import AudioSegment
 
 from faster_whisper_server.apps.transcription.client import WebSocketTranscriberClient
+from faster_whisper_server.apps.transcription.compare import add_compare_ui
 from faster_whisper_server.apps.transcription.const import CHUNK_TIME, SAMPLES_RATE
+from faster_whisper_server.apps.transcription.i18n import I18nText
 from faster_whisper_server.config import Config
 
 logger = logging.getLogger(__name__)
@@ -71,9 +72,12 @@ class SimulatedLiveTranscription:
     def create_gradio_interface(cls, config: Config, model_dropdown, language_dropdown, temperature_slider):
         simulated_live_transcription = cls(config.host, config.port)
         gr.Markdown(DESCRIPTION)
-        audio = gr.Audio(label="Audio", sources=["upload"], type="filepath")
-        text = gr.HighlightedText(
-            label="Transcription",
+        audio = gr.Audio(label=I18nText("音频", "Audio"), sources=["upload"], type="filepath")
+        text = gr.Textbox(
+            label=I18nText(
+                "识别结果(红色为当前确认结果,绿色为未确认结果)",
+                "Transcription (Red for current confirmed, Green for unconfirmed)",
+            ),
             interactive=False,
             show_inline_category=False,
             show_legend=False,
@@ -85,3 +89,4 @@ class SimulatedLiveTranscription:
             inputs=[audio, model_dropdown, language_dropdown, temperature_slider],
             outputs=[text],
         )
+        add_compare_ui(text, is_heighlighted=True)
