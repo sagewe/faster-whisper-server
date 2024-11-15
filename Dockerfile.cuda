@@ -15,10 +15,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-install-project
-COPY ./src ./pyproject.toml ./cudnn8/uv.lock ./
+COPY ./src ./test_online.py ./pyproject.toml ./cudnn8/uv.lock ./
+COPY ./evaluate-metric ./evaluate-metric
 RUN --mount=type=cache,target=/root/.cache/uv \
     sed -i 's/ctranslate2==4\.5\.0/ctranslate2==4.4.0/g' pyproject.toml && \
     uv sync --frozen --extra ui --extra dev
+
 ENV WHISPER__MODEL=Systran/faster-whisper-large-v3
 ENV UVICORN_HOST=0.0.0.0
 ENV UVICORN_PORT=8000
