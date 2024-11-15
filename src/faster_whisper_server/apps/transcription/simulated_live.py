@@ -10,6 +10,7 @@ from faster_whisper_server.apps.transcription.client import WebSocketTranscriber
 from faster_whisper_server.apps.transcription.compare import add_compare_ui
 from faster_whisper_server.apps.transcription.const import CHUNK_TIME, SAMPLES_RATE, TRANSCRIPTION_COLOR_MAPPING
 from faster_whisper_server.apps.transcription.i18n import I18nText
+from faster_whisper_server.apps.transcription.style import TRANSCRIPTION_HEIGHLIGHT_STYLE
 from faster_whisper_server.config import Config
 
 logger = logging.getLogger(__name__)
@@ -80,17 +81,7 @@ class SimulatedLiveTranscription:
         simulated_live_transcription = cls(config.host, config.port)
         gr.Markdown(DESCRIPTION)
         audio = gr.Audio(label=I18nText("音频", "Audio"), type="filepath")
-        text = gr.HighlightedText(
-            label=I18nText(
-                "识别结果(红色为当前确认结果,绿色为未确认结果)",
-                "Transcription (Red for current confirmed, Green for unconfirmed)",
-            ),
-            interactive=False,
-            show_inline_category=False,
-            show_legend=False,
-            combine_adjacent=True,
-            color_map=TRANSCRIPTION_COLOR_MAPPING,
-        )
+        text = gr.HighlightedText(**TRANSCRIPTION_HEIGHLIGHT_STYLE)
         audio.play(
             simulated_live_transcription.stream_audio_file,
             inputs=[audio, model_dropdown, language_dropdown, temperature_slider],

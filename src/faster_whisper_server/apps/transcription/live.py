@@ -9,12 +9,9 @@ from pydub import AudioSegment
 
 from faster_whisper_server.apps.transcription.client import WebSocketTranscriberClient
 from faster_whisper_server.apps.transcription.compare import add_compare_ui
-from faster_whisper_server.apps.transcription.const import (
-    SAMPLES_RATE,
-    TRANSCRIPTION_COLOR_MAPPING,
-    TRANSCRIPTION_UPDATE_INTERVAL,
-)
+from faster_whisper_server.apps.transcription.const import SAMPLES_RATE, TRANSCRIPTION_UPDATE_INTERVAL
 from faster_whisper_server.apps.transcription.i18n import I18nText
+from faster_whisper_server.apps.transcription.style import TRANSCRIPTION_HEIGHLIGHT_STYLE
 from faster_whisper_server.config import Config
 
 logger = logging.getLogger(__name__)
@@ -133,17 +130,7 @@ class LiveTranscription:
         )
         audio_live = gr.Audio(sources=["microphone"], type="numpy", streaming=True)
         timer = gr.Timer(value=TRANSCRIPTION_UPDATE_INTERVAL, active=False)
-        text_live_output = gr.HighlightedText(
-            label=I18nText(
-                "识别结果(红色为当前确认结果,绿色为未确认结果)",
-                "Transcription (Red for current confirmed, Green for unconfirmed)",
-            ),
-            interactive=False,
-            show_inline_category=False,
-            show_legend=False,
-            combine_adjacent=True,
-            color_map=TRANSCRIPTION_COLOR_MAPPING,
-        )
+        text_live_output = gr.HighlightedText(**TRANSCRIPTION_HEIGHLIGHT_STYLE)
 
         async def process_audio_stream(audio_chunk, state: SessionAudioStreamer, model, language, temperature):
             try:

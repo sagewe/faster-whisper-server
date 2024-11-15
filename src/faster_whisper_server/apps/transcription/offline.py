@@ -5,8 +5,8 @@ import gradio as gr
 
 from faster_whisper_server.apps.transcription.client import HttpTranscriberClient
 from faster_whisper_server.apps.transcription.compare import add_compare_ui
-from faster_whisper_server.apps.transcription.const import TRANSCRIPTION_COLOR_MAPPING
 from faster_whisper_server.apps.transcription.i18n import I18nText
+from faster_whisper_server.apps.transcription.style import TRANSCRIPTION_HEIGHLIGHT_STYLE
 from faster_whisper_server.config import Config
 
 DESCRIPTION = I18nText(
@@ -45,17 +45,7 @@ class OfflineTranscription:
         gr.Markdown(DESCRIPTION)
         audio = gr.Audio(type="filepath")
         btn = gr.Button(I18nText("开始", "Start"))
-        text = gr.HighlightedText(
-            label=I18nText(
-                "识别结果(红色为当前确认结果,绿色为未确认结果)",
-                "Transcription (Red for current confirmed, Green for unconfirmed)",
-            ),
-            interactive=False,
-            show_inline_category=False,
-            show_legend=False,
-            combine_adjacent=True,
-            color_map=TRANSCRIPTION_COLOR_MAPPING,
-        )
+        text = gr.HighlightedText(**TRANSCRIPTION_HEIGHLIGHT_STYLE)
         btn.click(
             offline_transcription.on_click,
             inputs=[audio, model_dropdown, language, temperature_slider, stream_checkbox],
