@@ -1,11 +1,11 @@
 from collections.abc import Generator
 from pathlib import Path
-from re import I
 
 import gradio as gr
 
 from faster_whisper_server.apps.transcription.client import HttpTranscriberClient
 from faster_whisper_server.apps.transcription.compare import add_compare_ui
+from faster_whisper_server.apps.transcription.const import TRANSCRIPTION_COLOR_MAPPING
 from faster_whisper_server.apps.transcription.i18n import I18nText
 from faster_whisper_server.config import Config
 
@@ -54,7 +54,7 @@ class OfflineTranscription:
             show_inline_category=False,
             show_legend=False,
             combine_adjacent=True,
-            color_map={"confirmed": "red", "unconfirmed": "green", "info": "gray"},
+            color_map=TRANSCRIPTION_COLOR_MAPPING,
         )
         btn.click(
             offline_transcription.on_click,

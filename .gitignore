@@ -177,6 +177,6 @@ esic/
 .idea
 apy_data/
 whisper-large-v3-turbo/
-outputs
+outputs*
 Justfile
 *.ipynb

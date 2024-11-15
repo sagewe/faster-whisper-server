@@ -8,7 +8,7 @@ from pydub import AudioSegment
 
 from faster_whisper_server.apps.transcription.client import WebSocketTranscriberClient
 from faster_whisper_server.apps.transcription.compare import add_compare_ui
-from faster_whisper_server.apps.transcription.const import CHUNK_TIME, SAMPLES_RATE
+from faster_whisper_server.apps.transcription.const import CHUNK_TIME, SAMPLES_RATE, TRANSCRIPTION_COLOR_MAPPING
 from faster_whisper_server.apps.transcription.i18n import I18nText
 from faster_whisper_server.config import Config
 
@@ -89,7 +89,7 @@ class SimulatedLiveTranscription:
             show_inline_category=False,
             show_legend=False,
             combine_adjacent=True,
-            color_map={"confirmed": "red", "unconfirmed": "green", "info": "gray"},
+            color_map=TRANSCRIPTION_COLOR_MAPPING,
         )
         audio.play(
             simulated_live_transcription.stream_audio_file,
