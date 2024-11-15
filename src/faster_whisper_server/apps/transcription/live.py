@@ -105,7 +105,7 @@ DESCRIPTION = I18nText(
     """### 实时转码
 - 功能: 读取麦克风信号,实时输出转码
 - 用途: 演示实时转码功能, 点击麦克风图标开始接收音频
-- 注意: 系统当前确认的结果用红色显示,未确认的结果用绿色显示
+- 注意: 系统当前确认的结果用绿色显示,未确认的结果用红色显示
 """,
     """### Live Transcription
 - Function: Read microphone signal, output transcoding in real time
