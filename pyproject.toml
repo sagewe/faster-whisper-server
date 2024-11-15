@@ -43,6 +43,9 @@ dev = [
     "pre-commit>=4.0.1",
     "jupyter>=1.1.1",
     "datasets",
+    "evaluate>=0.4.3",
+    "jiwer>=3.0.5",
+    "transformers[torch]>=4.46.2",
 ]
 ui = [
     "gradio>=5.0.2",
@@ -118,11 +121,3 @@ venv = ".venv"
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function" # this fixes pytest warning
-
-[dependency-groups]
-dev = [
-    "datasets>=3.1.0",
-    "evaluate>=0.4.3",
-    "jiwer>=3.0.5",
-    "transformers>=4.46.2",
-]

@@ -18,7 +18,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY ./src ./pyproject.toml ./cudnn8/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     sed -i 's/ctranslate2==4\.5\.0/ctranslate2==4.4.0/g' pyproject.toml && \
-    uv sync --frozen --extra ui
+    uv sync --frozen --extra ui --extra dev
 ENV WHISPER__MODEL=Systran/faster-whisper-small
 ENV UVICORN_HOST=0.0.0.0
 ENV UVICORN_PORT=8000
