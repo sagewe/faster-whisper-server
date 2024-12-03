@@ -60,7 +60,7 @@ class SelfDisposingWhisperModel:
                 model_size_or_path = os.path.join(self.whisper_config.offline_models_root, self.model_id)
             else:
                 model_size_or_path = self.model_id
-            logger.info(f"Loading model from {model_size_or_path}")
+            logger.info(f"Loading model from {model_size_or_path}, with whisper config {self.whisper_config}")
             self.whisper = WhisperModel(
                 model_size_or_path=model_size_or_path,
                 device=self.whisper_config.inference_device,

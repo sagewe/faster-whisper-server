@@ -15,15 +15,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-install-project
-COPY ./src ./test_online.py ./pyproject.toml ./cudnn8/uv.lock ./
-COPY ./evaluate-metric ./evaluate-metric
+COPY ./src ./pyproject.toml ./cudnn8/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     sed -i 's/ctranslate2==4\.5\.0/ctranslate2==4.4.0/g' pyproject.toml && \
-    uv sync --frozen --extra ui --extra dev
+    uv sync --frozen --extra ui
 
 ENV WHISPER__MODEL=Systran/faster-whisper-large-v3
 ENV UVICORN_HOST=0.0.0.0
 ENV UVICORN_PORT=8000
 ENV WHISPER_MODELS_CONFIG_FILE=/root/faster-whisper-server/models/models.json
 ENV WHISPER__OFFLINE_MODELS_ROOT=/root/faster-whisper-server/models
-CMD ["/root/faster-whisper-server/.venv/bin/uvicorn", "--factory", "faster_whisper_server.main:create_app"]
+COPY ./test_online.py ./
+CMD ["/root/faster-whisper-server/.venv/bin/uvicorn", "--factory", "faster_whisper_server.main:create_app", "--workers", "8"]

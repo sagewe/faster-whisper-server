@@ -1,7 +1,7 @@
 [project]
 name = "faster-whisper-server"
 version = "0.1.0"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.11,<3.12"
 # https://packaging.python.org/en/latest/specifications/version-specifiers/#id5
 dependencies = [
     "ctranslate2==4.5.0",
@@ -14,7 +14,6 @@ dependencies = [
     "numba>=0.59.1",
     "numpy",
     "openai>=1.53.0",
-    "pyaudio>=0.2.14",
     "pydantic-settings>=2.5.2",
     "pydantic>=2.9.0",
     "pydub>=0.25.1",
@@ -22,6 +21,24 @@ dependencies = [
     "soundfile>=0.12.1",
     "uvicorn>=0.30.6",
     "websockets>=12.0",
+    "evaluate>=0.4.3",
+    "jiwer>=3.0.5",
+    "datasets",
+    "langchain>=0.3.9",
+    "langchain-community>=0.3.8",
+    # "realtimetts[gtts]==0.4.11",
+    "resampy>=0.4.3",
+    "gtts>=2.5.4",
+    "dashscope>=1.20.14",
+    "chromadb>=0.5.21",
+    "langchain-chroma>=0.1.4",
+    "transformers>=4.46.2",
+    "torch>=2.5.1",
+    "torchaudio>=2.5.1",
+    "tiktoken>=0.8.0",
+    "blobfile>=3.0.0",
+    "sentencepiece>=0.2.0",
+    "langgraph>=0.2.56",
 ]
 
 [project.optional-dependencies]
@@ -42,9 +59,6 @@ dev = [
     "webvtt-py>=0.5.1",
     "pre-commit>=4.0.1",
     "jupyter>=1.1.1",
-    "datasets",
-    "evaluate>=0.4.3",
-    "jiwer>=3.0.5",
     "transformers[torch]>=4.46.2",
 ]
 ui = [
@@ -121,3 +135,9 @@ venv = ".venv"
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function" # this fixes pytest warning
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+]
+

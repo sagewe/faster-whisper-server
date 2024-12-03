@@ -8,7 +8,9 @@ from faster_whisper_server.apps.transcription.i18n import I18nText
 from faster_whisper_server.apps.transcription.live import LiveTranscription
 from faster_whisper_server.apps.transcription.offline import OfflineTranscription
 from faster_whisper_server.apps.transcription.simulated_live import SimulatedLiveTranscription
+from faster_whisper_server.apps.transcription.llm import AudioChatBot
 from faster_whisper_server.config import Config
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +43,8 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
             value = languages[0]
             languages = [value]
         else:
-            mapping = {"en": 0, "zh": 1, "ar": 2}
-            languages.sort(key=lambda x: mapping.get(x, 3))
+            mapping = {"en": 0, "zh": 1, "ar": 2, "yue": 3}
+            languages.sort(key=lambda x: mapping.get(x, 4))
             languages = ["auto"] + languages
         dropdown = gr.Dropdown(
             value=value,
@@ -63,7 +65,7 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
     with gr.Blocks(theme=gr.themes.Soft()) as iface:
         models = gr.State({})
         gr.Markdown("""
-# ASR 演示系统
+# 客服对话演示系统
 """)
         with gr.Row():
             with gr.Column():
@@ -83,27 +85,22 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
                 )
                 preload_models.click(fn_preload_models, inputs=[model_dropdown], outputs=[preload_models_reponse])
             with gr.Column(scale=3):
-                with gr.Tab(I18nText("模拟实时转码", "Simulated Live Transcription")):
-                    simulated_live_transcription = SimulatedLiveTranscription.create_gradio_interface(
+                with gr.Tab(I18nText("问答机器人", "Chatbot")):
+                    chatbot = AudioChatBot.create_gradio_interface(
                         config, model_dropdown, language_dropdown, temperature_slider
                     )
-                with gr.Tab(I18nText("离线转码", "Offline Transcription")):
-                    offline_transcription = OfflineTranscription.create_gradio_interface(
-                        config, model_dropdown, language_dropdown, temperature_slider, stream_checkbox
-                    )
+                # with gr.Tab(I18nText("模拟实时转码", "Simulated Live Transcription")):
+                #     simulated_live_transcription = SimulatedLiveTranscription.create_gradio_interface(
+                #         config, model_dropdown, language_dropdown, temperature_slider
+                #     )
+                # with gr.Tab(I18nText("离线转码", "Offline Transcription")):
+                #     offline_transcription = OfflineTranscription.create_gradio_interface(
+                #         config, model_dropdown, language_dropdown, temperature_slider, stream_checkbox
+                #     )
 
-                with gr.Tab(I18nText("实时转码", "Real-time Transcription")):
-                    live_transcription = LiveTranscription.create_gradio_interface(
-                        config, model_dropdown, language_dropdown, temperature_slider
-                    )
-                # TODO: HighlightedText does not support RTL, show we contribute to Gradio?
-                # def fn_update_rtl(language_dropdown):
-                #     rtl = language_dropdown == "ar"
-                #     return gr.update(rtl=rtl)
+                # with gr.Tab(I18nText("实时转码", "Real-time Transcription")):
+                #     live_transcription = LiveTranscription.create_gradio_interface(
+                #         config, model_dropdown, language_dropdown, temperature_slider
+                #     )
 
-                # language_dropdown.change(
-                #     fn_update_rtl,
-                #     inputs=[language_dropdown],
-                #     outputs=[text_transcription_output],
-                # )
     return iface

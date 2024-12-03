@@ -180,3 +180,4 @@ whisper-large-v3-turbo/
 outputs*
 Justfile
 *.ipynb
+dataset
