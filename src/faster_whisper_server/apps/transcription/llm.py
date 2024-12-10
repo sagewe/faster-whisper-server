@@ -13,6 +13,8 @@ from gtts import gTTS
 from openai import OpenAI, chat
 from pydub import AudioSegment
 from pathlib import Path
+from regex import F
+import soundfile
 
 from .qa import RAGLLM, punctuation
 
@@ -51,11 +53,8 @@ class AppState:
     stopped: bool = False
     conversation_visual: list = field(default_factory=list)
     qa: Optional[RAGLLM] = None
-    user_audio_path: Optional[str] = None
     asr_input: Optional[str] = None
     asr_result: Optional[str] = None
-    tts_input: Optional[str] = None
-    tts_output: Optional[str] = None
 
 
 desc2lang = {
@@ -76,14 +75,12 @@ class AudioChatBot:
     def __init__(self, host, port):
         self.http_client = HttpTranscriberClient(port, host)
 
-    def create_app_state(self, conversation_visual=None, stopped=False, qa=None, tts_output=None):
+    def create_app_state(self, conversation_visual=None, stopped=False, qa=None):
         kwargs = {"stopped": stopped}
         if conversation_visual is not None:
             kwargs["conversation_visual"] = conversation_visual
         if qa is not None:
             kwargs["qa"] = qa
-        if tts_output is not None:
-            kwargs["tts_output"] = tts_output
         return AppState(**kwargs)
 
     def run_vad(self, ori_audio, sr):
@@ -183,7 +180,7 @@ class AudioChatBot:
             )
         return state
 
-    def on_dump_user_audio(self, state: AppState):
+    def on_dump_user_audio(self, state: AppState, add_chat_audio: bool):
         if state.asr_input is not None:
             return state, state.conversation_visual
         # save recorded audio to file
@@ -201,10 +198,11 @@ class AudioChatBot:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             f.write(audio_buffer.getvalue())
         state.asr_input = f.name
-        # state.conversation_visual.append(
-        #     {"role": "user", "content": {"path": state.asr_input, "mime_type": "audio/wav"}}
-        # )
-        state.user_audio_path = f.name
+
+        if add_chat_audio:
+            state.conversation_visual.append(
+                {"role": "user", "content": {"path": state.asr_input, "mime_type": "audio/wav"}}
+            )
         logger.info(f"User audio saved to {f.name}, time cost: {time.time() - start_time:.3f} s")
         return state, state.conversation_visual
 
@@ -216,14 +214,14 @@ class AudioChatBot:
         logger.info("on_asr, state: %s", state)
         start_time = time.time()
         logger.info("Start ASR")
-        asr_result = self.asr(state.user_audio_path, asr_model, asr_language, asr_temperature)
+        asr_result = self.asr(state.asr_input, asr_model, asr_language, asr_temperature)
         user_asr_message = {"role": "user", "content": asr_result}
         state.conversation_visual.append(user_asr_message)
         state.asr_result = asr_result
         logger.info(f"ASR done, time cost: {time.time() - start_time:.3f} s")
         return state, state.conversation_visual
 
-    def on_answer(self, state: AppState, tts_language: str, speed_rate: float):
+    def on_answer(self, state: AppState, tts_language: str, speed_rate: float, add_chat_audio: bool):
         logger.info("on_answer, state: %s", state)
         # LLM
         start_time = time.time()
@@ -231,30 +229,40 @@ class AudioChatBot:
 
         def get_tts(text, language, speed_rate):
             tts = gTTS(text, lang=desc2lang[language])
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            with tempfile.NamedTemporaryFile(suffix=".mp3") as f:
                 tts.write_to_fp(f)
                 librosa_audio, sr = librosa.load(f.name, sr=None)
                 librosa_audio = librosa.effects.time_stretch(librosa_audio, rate=speed_rate)
-                librosa_audio = np.int16(librosa_audio * 32768.0)
                 return sr, librosa_audio
 
         cache = ""
+        full_tts = np.array([])
         state.conversation_visual.append({"role": "assistant", "content": ""})
         for chunk in state.qa.stream(state.asr_result, tts_language):
             state.conversation_visual[-1]["content"] += chunk
             cache += chunk
             if cache and cache[-1] in punctuation:
                 sr, librosa_audio = get_tts(cache, tts_language, speed_rate)
-                yield state, (sr, librosa_audio), state.conversation_visual
+                full_tts = np.concatenate((full_tts, librosa_audio))
+                yield state, (sr, np.int16(librosa_audio * 32768.0)), state.conversation_visual
                 cache = ""
             else:
                 yield state, None, state.conversation_visual
         if cache:
             try:
                 sr, librosa_audio = get_tts(cache, tts_language, speed_rate)
-                yield state, (sr, librosa_audio), state.conversation_visual
+                full_tts = np.concatenate((full_tts, librosa_audio))
+                yield state, (sr, np.int16(librosa_audio * 32768.0)), state.conversation_visual
             except Exception as e:
                 print(e)
+
+        if add_chat_audio:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                soundfile.SoundFile(f.name, mode="w", samplerate=sr, channels=1, subtype="PCM_16").write(full_tts)
+            state.conversation_visual.append(
+                {"role": "assistant", "content": {"path": f.name, "mime_type": "audio/wav"}}
+            )
+        logger.info(f"AI response done, time cost: {time.time() - start_time:.3f} s")
 
         yield (
             self.create_app_state(conversation_visual=state.conversation_visual, qa=state.qa),
@@ -273,13 +281,16 @@ class AudioChatBot:
             with gr.Column(scale=4):
                 chatbot = gr.Chatbot(label="Conversation", type="messages", height=600)
             with gr.Column(scale=1):
-                speed_rate_slider = gr.Slider(minimum=0.5, maximum=3.0, step=0.1, label="语速", value=1.5)
-                tts_language_dropdown = gr.Dropdown(
-                    choices=list(desc2lang.keys()),
-                    label="机器人口音",
-                    value="香港粤语",
-                )
-                with gr.Accordion(label="大模型设置"):
+                with gr.Accordion(label="语音设置"):
+                    speed_rate_slider = gr.Slider(minimum=0.5, maximum=3.0, step=0.1, label="语速", value=1.5)
+                    tts_language_dropdown = gr.Dropdown(
+                        choices=list(desc2lang.keys()),
+                        label="机器人口音",
+                        value="香港粤语",
+                    )
+                    input_audio = gr.Audio(label="语音输入", sources="microphone", type="numpy")
+                    output_audio = gr.Audio(label="语音输出", type="numpy", autoplay=True, streaming=True)
+                with gr.Accordion(label="对话设置", open=False):
                     chat_model = gr.Dropdown(
                         choices=["qwen-max"],
                         label="对话模型",
@@ -302,8 +313,7 @@ class AudioChatBot:
                         value="text-embedding-v1",
                     )
                     api_key_textbox = gr.Textbox(value=config.dashscope_api_key, label="API Key", type="password")
-                input_audio = gr.Audio(label="语音输入", sources="microphone", type="numpy")
-                output_audio = gr.Audio(label="语音输出", type="numpy", autoplay=True, streaming=True)
+                    add_chat_audio = gr.Checkbox(label="添加对话音频", value=False)
                 cancel = gr.Button("重置对话", variant="stop")
         state = gr.State(value=audio_chatbot.create_app_state())
 
@@ -329,7 +339,7 @@ class AudioChatBot:
             )
             .success(
                 audio_chatbot.on_dump_user_audio,
-                [state],
+                [state, add_chat_audio],
                 [state, chatbot],
             )
             .success(
@@ -339,7 +349,7 @@ class AudioChatBot:
             )
             .success(
                 audio_chatbot.on_answer,
-                [state, tts_language_dropdown, speed_rate_slider],
+                [state, tts_language_dropdown, speed_rate_slider, add_chat_audio],
                 [state, output_audio, chatbot],
             )
         )
