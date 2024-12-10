@@ -1,11 +1,18 @@
+import os
+import queue
+import string
+import threading
+import zhon
+from abc import ABC
 from langchain.chains import ConversationalRetrievalChain
+from langchain.callbacks.base import BaseCallbackHandler
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts.prompt import PromptTemplate
 from langchain_chroma import Chroma
 from langchain_community.embeddings.dashscope import DashScopeEmbeddings
 from langchain_community.llms.tongyi import Tongyi
-from langchain_community.llms.openai import OpenAIChat
-import os
+from typing import Any
+
 
 chat_model = "qwen-max"
 embedding_model = "text-embedding-v1"
@@ -20,15 +27,24 @@ PROMPT_TEMPLATE = """
 註意: 所有內容均不要聯想，只可以從[參考文檔內容]中進行提取!!另外，需要過濾廣告用語，比如電話鏈接、產品廣告、或者引導去某個網站等。
 """
 
-
 vectorstore_path = os.path.abspath(
     os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, os.pardir, "vectorstore")
 )
 mapping = {"银行与保险知识库": "rag-chroma"}
 
+punctuation = set(string.punctuation + zhon.hanzi.punctuation + "\n")
+
+
+class StreamingCallbackHandler(BaseCallbackHandler, ABC):
+    def __init__(self, q):
+        self.q = q
+
+    def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
+        self.q.put(token)
+
 
 class RAGLLM:
-    def __init__(self, collection_name="rag-chroma"):
+    def __init__(self, collection_name="rag-chroma", streaming=False):
         if not os.path.exists(vectorstore_path):
             raise ValueError(f"Vectorstore path {vectorstore_path} not found")
         if collection_name not in mapping:
@@ -37,24 +53,56 @@ class RAGLLM:
         self.dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
         self.vectorstore = self.get_vectorstore(vectorstore_path, collection_name=mapping[collection_name])
         self.retriever = self.vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 10, "fetch_k": 100})
-        self.llm = self.get_chat_llm()
+        self.token_queue = queue.Queue()
+        self.llm = self.get_chat_llm(streaming=streaming)
         self.prompt = PromptTemplate(
             template=PROMPT_TEMPLATE, input_variables=["context", "chat_history", "question", "lang"]
         )
         self.memory = ConversationBufferMemory(memory_key="chat_history", input_key="question", return_messages=True)
 
     def query(self, q: str, lang: str, verbose=False):
-        qa_chain = ConversationalRetrievalChain.from_llm(
-            llm=self.llm,
-            retriever=self.retriever,
-            memory=self.memory,
-            verbose=verbose,
-            combine_docs_chain_kwargs={"prompt": self.prompt},
-        )
+        qa_chain = self.get_chain(verbose)
         result = qa_chain.invoke({"question": q, "lang": lang})
         return result["answer"]
 
     def stream(self, q: str, lang: str, verbose=False):
+        qa_chain = self.get_chain(verbose)
+        sem = threading.Semaphore(0)
+        thread = threading.Thread(target=execute_query, args=(qa_chain, {"question": q, "lang": lang}, sem))
+        thread.start()
+
+        while True:
+            if self.token_queue.empty():
+                if sem.acquire(blocking=False):
+                    break
+
+                continue
+            token = self.token_queue.get()
+
+            while True:
+                pos = get_punctuation_pos(token)
+                if pos == -1:
+                    yield token
+                    break
+                yield token[:pos]
+                yield token[pos]
+                if pos + 1 == len(token):
+                    break
+                token = token[pos + 1:]
+
+    def get_chat_llm(self, streaming=False):
+        params = dict(
+            model=chat_model,
+            dashscope_api_key=self.dashscope_api_key,
+            temperature=0,
+            streaming=streaming
+        )
+        if streaming:
+            params.update(dict(callbacks=[StreamingCallbackHandler(self.token_queue)]))
+
+        return Tongyi(**params)
+
+    def get_chain(self, verbose=False):
         qa_chain = ConversationalRetrievalChain.from_llm(
             llm=self.llm,
             retriever=self.retriever,
@@ -62,11 +110,8 @@ class RAGLLM:
             verbose=verbose,
             combine_docs_chain_kwargs={"prompt": self.prompt},
         )
-        result = qa_chain.stream({"question": q, "lang": lang})
-        return result
 
-    def get_chat_llm(self):
-        return Tongyi(model=chat_model, dashscope_api_key=self.dashscope_api_key, temperature=0)
+        return qa_chain
 
     def get_embedding(self):
         return DashScopeEmbeddings(model=embedding_model, dashscope_api_key=self.dashscope_api_key)
@@ -77,8 +122,26 @@ class RAGLLM:
         )
 
 
+def execute_query(qa, query, sem):
+    ret = qa.stream(query)
+    try:
+        ret = list(ret)
+    finally:
+        sem.release()
+
+    return ret
+
+
+def get_punctuation_pos(token):
+    for idx, c in enumerate(token):
+        if c in punctuation:
+            return idx
+
+    return -1
+
+
 if __name__ == "__main__":
-    rag_llm = RAGLLM("保险知识库")
+    rag_llm = RAGLLM("银行与保险知识库", streaming=True)
     for s in rag_llm.stream("分红型储蓄有咩优势", "zh"):
         print(s)
     for s in rag_llm.stream("第二点展开说下", "zh"):
