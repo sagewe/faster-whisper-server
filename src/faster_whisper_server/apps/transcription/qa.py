@@ -34,6 +34,7 @@ class RAGLLM:
         if collection_name not in mapping:
             raise ValueError(f"Collection name {collection_name} not found in mapping")
 
+        self.dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
         self.vectorstore = self.get_vectorstore(vectorstore_path, collection_name=mapping[collection_name])
         self.retriever = self.vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 10, "fetch_k": 100})
         self.llm = self.get_chat_llm()
@@ -65,14 +66,10 @@ class RAGLLM:
         return result
 
     def get_chat_llm(self):
-        import os
-
-        dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
-
-        return Tongyi(model=chat_model, dashscope_api_key=dashscope_api_key, temperature=0)
+        return Tongyi(model=chat_model, dashscope_api_key=self.dashscope_api_key, temperature=0)
 
     def get_embedding(self):
-        return DashScopeEmbeddings(model=embedding_model, dashscope_api_key=dashscope_api_key)
+        return DashScopeEmbeddings(model=embedding_model, dashscope_api_key=self.dashscope_api_key)
 
     def get_vectorstore(self, db_dir, collection_name):
         return Chroma(

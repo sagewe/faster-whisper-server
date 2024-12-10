@@ -31,8 +31,7 @@ def get_doc_splits():
         for file in files:
             docs = TextLoader(args.input_path + "/" + file).load()
             text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-                chunk_size=args.chunk_size,
-                chunk_overlap=args.chunk_overlap
+                chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap
             )
             doc_splits = text_splitter.split_documents(docs)
             docs_splits_list.extend(doc_splits)
@@ -47,8 +46,7 @@ def get_doc_splits():
         docs_list = [item for sublist in docs for item in sublist]
 
         text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-            chunk_size=args.chunk_size,
-            chunk_overlap=args.chunk_overlap
+            chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap
         )
         docs_splits_list = text_splitter.split_documents(docs_list)
 
@@ -60,27 +58,17 @@ def get_doc_splits():
 
 
 def build_vectorstore(docs):
-    embedding = DashScopeEmbeddings(
-        model=embedding_model,
-        dashscope_api_key=dashscope_api_key
-    )
+    embedding = DashScopeEmbeddings(model=embedding_model, dashscope_api_key=dashscope_api_key)
 
     if args.db_init:
         vectorstore = Chroma.from_documents(
-            documents=docs,
-            collection_name=db_name,
-            embedding=embedding,
-            persist_directory=args.persist_dir
+            documents=docs, collection_name=db_name, embedding=embedding, persist_directory=args.persist_dir
         )
     else:
         vectorstore = Chroma(
-            collection_name="rag-chroma",
-            persist_directory=args.persist_dir,
-            embedding_function=embedding
+            collection_name="rag-chroma", persist_directory=args.persist_dir, embedding_function=embedding
         )
-        vectorstore.add_documents(
-            documents=docs
-        )
+        vectorstore.add_documents(documents=docs)
 
     vectorstore.persist()
 
