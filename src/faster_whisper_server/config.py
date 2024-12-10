@@ -1,6 +1,7 @@
 import enum
-from turtle import down
+from typing import Optional
 
+import dashscope
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sympy import N
@@ -199,6 +200,8 @@ class Config(BaseSettings):
     """
     Whether to enable the Gradio UI. You may want to disable this if you want to minimize the dependencies.
     """
+    dashscope_api_key: Optional[str] = None
+    vectorstore_path: Optional[str] = None
 
     default_language: Language | None = None
     """

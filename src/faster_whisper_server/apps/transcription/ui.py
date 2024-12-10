@@ -26,10 +26,12 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
 
     def update_model_dropdown() -> gr.Dropdown:
         model_data = openai_client.models.list().data
+        mapping = {"cwj": 0, "deepdml": 1, "Systran": 2}
         models = {model.id: model for model in model_data}
         model_names = list(models.keys())
+        model_names.sort(key=lambda x: mapping.get(x.split("/")[0], 3))
         dropdown = gr.Dropdown(
-            value="deepdml/faster-whisper-large-v3-turbo-ct2",
+            value=model_names[0],
             choices=model_names,
             label="Model",
         )
@@ -38,16 +40,11 @@ def create_gradio_demo(config: Config) -> gr.Blocks:
     def update_language_dropdown(model, models) -> gr.Dropdown:
         model_data = models[model]
         languages = model_data.language
-        value = "auto"
-        if len(languages) == 1:
-            value = languages[0]
-            languages = [value]
-        else:
-            mapping = {"en": 0, "zh": 1, "ar": 2, "yue": 3}
-            languages.sort(key=lambda x: mapping.get(x, 4))
-            languages = ["auto"] + languages
+        languages.append("auto")
+        mapping = {"yue": 0, "zh": 1, "ar": 2, "en": 3, "auto": 4}
+        languages.sort(key=lambda x: mapping.get(x, 5))
         dropdown = gr.Dropdown(
-            value=value,
+            value=languages[0],
             choices=languages,
             label="Language",
         )

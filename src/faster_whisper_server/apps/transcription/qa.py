@@ -14,9 +14,6 @@ from langchain_community.llms.tongyi import Tongyi
 from typing import Any
 
 
-chat_model = "qwen-max"
-embedding_model = "text-embedding-v1"
-
 PROMPT_TEMPLATE = """
 妳是一個誠實的{lang}語音助手，可以通過查閱給出的參考文檔內容來進行歸納總結，現在給出的參考文檔內容如下:
 {context}
@@ -27,9 +24,6 @@ PROMPT_TEMPLATE = """
 註意: 所有內容均不要聯想，只可以從[參考文檔內容]中進行提取!!另外，需要過濾廣告用語，比如電話鏈接、產品廣告、或者引導去某個網站等。
 """
 
-vectorstore_path = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, os.pardir, "vectorstore")
-)
 mapping = {"银行与保险知识库": "rag-chroma"}
 
 punctuation = set(string.punctuation + zhon.hanzi.punctuation + "\n")
@@ -44,17 +38,35 @@ class StreamingCallbackHandler(BaseCallbackHandler, ABC):
 
 
 class RAGLLM:
-    def __init__(self, collection_name="rag-chroma", streaming=False):
+    def __init__(
+        self,
+        vectorstore_path=None,
+        collection_name="银行与保险知识库",
+        chat_model="qwen-max",
+        embedding_model="text-embedding-v1",
+        api_key=None,
+        streaming=False,
+    ):
+        if vectorstore_path is None or vectorstore_path == "":
+            vectorstore_path = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, os.pardir, "vectorstore")
+            )
+
         if not os.path.exists(vectorstore_path):
             raise ValueError(f"Vectorstore path {vectorstore_path} not found")
         if collection_name not in mapping:
             raise ValueError(f"Collection name {collection_name} not found in mapping")
-
-        self.dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
-        self.vectorstore = self.get_vectorstore(vectorstore_path, collection_name=mapping[collection_name])
+        if api_key is None or api_key == "":
+            api_key = os.getenv("DASHSCOPE_API_KEY")
+            if api_key is None or api_key == "":
+                raise ValueError("DASHSCOPE_API_KEY is not set")
+        self.dashscope_api_key = api_key
+        self.vectorstore = self.get_vectorstore(
+            vectorstore_path, collection_name=mapping[collection_name], embedding_model=embedding_model
+        )
         self.retriever = self.vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 10, "fetch_k": 100})
         self.token_queue = queue.Queue()
-        self.llm = self.get_chat_llm(streaming=streaming)
+        self.llm = self.get_chat_llm(chat_model=chat_model, streaming=streaming)
         self.prompt = PromptTemplate(
             template=PROMPT_TEMPLATE, input_variables=["context", "chat_history", "question", "lang"]
         )
@@ -88,15 +100,10 @@ class RAGLLM:
                 yield token[pos]
                 if pos + 1 == len(token):
                     break
-                token = token[pos + 1:]
+                token = token[pos + 1 :]
 
-    def get_chat_llm(self, streaming=False):
-        params = dict(
-            model=chat_model,
-            dashscope_api_key=self.dashscope_api_key,
-            temperature=0,
-            streaming=streaming
-        )
+    def get_chat_llm(self, chat_model, streaming=False):
+        params = dict(model=chat_model, dashscope_api_key=self.dashscope_api_key, temperature=0, streaming=streaming)
         if streaming:
             params.update(dict(callbacks=[StreamingCallbackHandler(self.token_queue)]))
 
@@ -113,12 +120,14 @@ class RAGLLM:
 
         return qa_chain
 
-    def get_embedding(self):
+    def get_embedding(self, embedding_model):
         return DashScopeEmbeddings(model=embedding_model, dashscope_api_key=self.dashscope_api_key)
 
-    def get_vectorstore(self, db_dir, collection_name):
+    def get_vectorstore(self, db_dir, collection_name, embedding_model):
         return Chroma(
-            collection_name=collection_name, persist_directory=db_dir, embedding_function=self.get_embedding()
+            collection_name=collection_name,
+            persist_directory=db_dir,
+            embedding_function=self.get_embedding(embedding_model=embedding_model),
         )
 
 

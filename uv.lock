@@ -757,11 +757,9 @@ dependencies = [
     { name = "sentencepiece" },
     { name = "soundfile" },
     { name = "tiktoken" },
-    { name = "torch" },
-    { name = "torchaudio" },
-    { name = "transformers" },
     { name = "uvicorn" },
     { name = "websockets" },
+    { name = "zhon" },
 ]
 
 [package.optional-dependencies]
@@ -781,6 +779,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "ruff" },
     { name = "srt" },
+    { name = "torchaudio" },
     { name = "transformers", extra = ["torch"] },
     { name = "webvtt-py" },
 ]
@@ -844,13 +843,12 @@ requires-dist = [
     { name = "soundfile", specifier = ">=0.12.1" },
     { name = "srt", marker = "extra == 'dev'", specifier = ">=3.5.3" },
     { name = "tiktoken", specifier = ">=0.8.0" },
-    { name = "torch", specifier = ">=2.5.1" },
-    { name = "torchaudio", specifier = ">=2.5.1" },
-    { name = "transformers", specifier = ">=4.46.2" },
+    { name = "torchaudio", marker = "extra == 'dev'", specifier = ">=2.5.1" },
     { name = "transformers", extras = ["torch"], marker = "extra == 'dev'", specifier = ">=4.46.2" },
     { name = "uvicorn", specifier = ">=0.30.6" },
     { name = "websockets", specifier = ">=12.0" },
     { name = "webvtt-py", marker = "extra == 'dev'", specifier = ">=0.5.1" },
+    { name = "zhon", specifier = ">=2.1.1" },
 ]
 
 [package.metadata.requires-dev]
@@ -6674,6 +6672,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/85/321c563dc5afe1661108831b965c512d185c61785400f5606006507d2e18/yarl-1.17.1-cp311-cp311-win32.whl", hash = "sha256:7615058aabad54416ddac99ade09a5510cf77039a3b903e94e8922f25ed203d7", size = 83635 },
     { url = "https://files.pythonhosted.org/packages/bc/da/543a32c00860588ff1235315b68f858cea30769099c32cd22b7bb266411b/yarl-1.17.1-cp311-cp311-win_amd64.whl", hash = "sha256:14bc88baa44e1f84164a392827b5defb4fa8e56b93fecac3d15315e7c8e5d8b3", size = 90218 },
     { url = "https://files.pythonhosted.org/packages/52/ad/1fe7ff5f3e8869d4c5070f47b96bac2b4d15e67c100a8278d8e7876329fc/yarl-1.17.1-py3-none-any.whl", hash = "sha256:f1790a4b1e8e8e028c391175433b9c8122c39b46e1663228158e61e6f915bf06", size = 44352 },
+]
+
+[[package]]
+name = "zhon"
+version = "2.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2a/8d/e6c8ee4df75940ddecb6f5e7b2753a9a3914e6cd357e7238987661723d81/zhon-2.1.1.tar.gz", hash = "sha256:c8da424fad4aa698ddd3e1735515b49ff522c84dd1091e8fafd986ac7c6898f0", size = 84448 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/13/b8d6ca3a41bf5959bc3915678837385bf668162a7295140d81ccae0b96b7/zhon-2.1.1-py3-none-any.whl", hash = "sha256:9ec0d42229ae60708a045270f755ccefb48f2689f2a6ce0bc6597abf6c4a9871", size = 83933 },
 ]
 
 [[package]]

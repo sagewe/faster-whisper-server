@@ -10,7 +10,7 @@ import gradio as gr
 import librosa
 import numpy as np
 from gtts import gTTS
-from openai import OpenAI
+from openai import OpenAI, chat
 from pydub import AudioSegment
 from pathlib import Path
 
@@ -165,7 +165,12 @@ class AudioChatBot:
     def on_stop_recording(
         self,
         state: AppState,
+        vectorstore_path,
         vectorstore,
+        chat_model,
+        embedding_model,
+        dashscope_api_key,
+        streaming,
     ):
         # if not state.started_talking:
         #     state = self.create_app_state(qa=state.qa)
@@ -173,7 +178,14 @@ class AudioChatBot:
         logger.info("on_stop_recording, state: %s", state)
 
         if state.qa is None:
-            state.qa = RAGLLM(vectorstore)
+            state.qa = RAGLLM(
+                vectorstore_path=vectorstore_path,
+                collection_name=vectorstore,
+                chat_model=chat_model,
+                embedding_model=embedding_model,
+                api_key=dashscope_api_key,
+                streaming=streaming,
+            )
         return state
 
     def on_dump_user_audio(self, state: AppState):
@@ -279,11 +291,30 @@ class AudioChatBot:
                     label="机器人口音",
                     value="香港粤语",
                 )
-                vectorstore_dropdown = gr.Dropdown(
-                    choices=["银行与保险知识库"],
-                    label="知识库",
-                    value="银行与保险知识库",
-                )
+                with gr.Accordion(label="大模型设置"):
+                    chat_model = gr.Dropdown(
+                        choices=["qwen-max"],
+                        label="对话模型",
+                        value="qwen-max",
+                    )
+                    vectorstore_path = gr.Textbox(
+                        value=config.vectorstore_path,
+                        label="Vectorstore路径",
+                        placeholder="请输入Vectorstore路径",
+                        visible=False,
+                    )
+                    vectorstore_dropdown = gr.Dropdown(
+                        choices=["银行与保险知识库"],
+                        label="知识库",
+                        value="银行与保险知识库",
+                    )
+                    embedding_model = gr.Dropdown(
+                        choices=["text-embedding-v1"],
+                        label="Embedding模型",
+                        value="text-embedding-v1",
+                    )
+                    api_key_textbox = gr.Textbox(value=config.dashscope_api_key, label="API Key", type="password")
+                    streaming_checkbox = gr.Checkbox(label="流式传输", value=False)
                 input_audio = gr.Audio(label="语音输入", sources="microphone", type="numpy")
                 output_audio = gr.Audio(label="语音输出", type="numpy", autoplay=True, streaming=True)
                 cancel = gr.Button("重置对话", variant="stop")
@@ -299,7 +330,15 @@ class AudioChatBot:
         respond = (
             input_audio.stop_recording(
                 audio_chatbot.on_stop_recording,
-                [state, vectorstore_dropdown],
+                [
+                    state,
+                    vectorstore_path,
+                    vectorstore_dropdown,
+                    chat_model,
+                    embedding_model,
+                    api_key_textbox,
+                    streaming_checkbox,
+                ],
                 [state],
             )
             .success(
