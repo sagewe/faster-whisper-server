@@ -1,11 +1,16 @@
+import os
 import pickle
 import argparse
-import json
-import sys
-from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings.dashscope import DashScopeEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.document_loaders import TextLoader
+from langchain_community.document_loaders import WebBaseLoader
+
+
+embedding_model = "text-embedding-v1"
+dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
+db_name = "rag-chroma"
 
 
 def load_urls(path):
@@ -19,33 +24,78 @@ def load_urls(path):
     return url_list
 
 
+def get_doc_splits():
+    if args.source == "doc":
+        files = os.listdir(args.input_path)
+        docs_splits_list = []
+        for file in files:
+            docs = TextLoader(args.input_path + "/" + file).load()
+            text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+                chunk_size=args.chunk_size,
+                chunk_overlap=args.chunk_overlap
+            )
+            doc_splits = text_splitter.split_documents(docs)
+            docs_splits_list.extend(doc_splits)
+    else:
+        urls = load_urls(args.input_path)
+        docs = []
+        for url in urls:
+            try:
+                docs.append(WebBaseLoader(url).load())
+            except BaseException:
+                continue
+        docs_list = [item for sublist in docs for item in sublist]
+
+        text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+            chunk_size=args.chunk_size,
+            chunk_overlap=args.chunk_overlap
+        )
+        docs_splits_list = text_splitter.split_documents(docs_list)
+
+    if args.output_doc_splits_path is not None:
+        with open(args.output_doc_splits_path, "wb") as fout:
+            fout.write(pickle.dumps(docs_splits_list))
+
+    return docs_splits_list
+
+
+def build_vectorstore(docs):
+    embedding = DashScopeEmbeddings(
+        model=embedding_model,
+        dashscope_api_key=dashscope_api_key
+    )
+
+    if args.db_init:
+        vectorstore = Chroma.from_documents(
+            documents=docs,
+            collection_name=db_name,
+            embedding=embedding,
+            persist_directory=args.persist_dir
+        )
+    else:
+        vectorstore = Chroma(
+            collection_name="rag-chroma",
+            persist_directory=args.persist_dir,
+            embedding_function=embedding
+        )
+        vectorstore.add_documents(
+            documents=docs
+        )
+
+    vectorstore.persist()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_urls_path", type=str)
-    parser.add_argument("--output_doc_splits_path", type=str)
+    parser.add_argument("--input_path", type=str)
+    parser.add_argument("--source", type=str, default="doc", choices=["doc", "url"])
+    parser.add_argument("--output_doc_splits_path", type=str, default=None)
     parser.add_argument("--persist_dir", type=str)
+    parser.add_argument("--db_init", action="store_true")
+    parser.add_argument("--chunk_size", type=int, default=512)
+    parser.add_argument("--chunk_overlap", type=int, default=256)
 
     args = parser.parse_args()
 
-    urls = load_urls(args.input_urls_path)
-
-    docs = [WebBaseLoader(url).load() for url in urls]
-    docs_list = [item for sublist in docs for item in sublist]
-
-    text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(chunk_size=1024, chunk_overlap=512)
-    doc_splits = text_splitter.split_documents(docs_list)
-
-    with open(args.output_doc_splits_path, "wb") as fout:
-        fout.write(pickle.dumps(doc_splits))
-
-    vectorstore = Chroma.from_documents(
-        documents=doc_splits,
-        collection_name="rag-chroma",
-        embedding=DashScopeEmbeddings(
-            model="text-embedding-v1",
-            # dashscope_api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            dashscope_api_key="sk-a16d5f40946d4e50867a1635c65a610c",
-        ),
-        persist_directory=args.persist_dir,
-    )
-    # retriever = vectorstore.as_retriever()
+    docs_splits = get_doc_splits()
+    build_vectorstore(docs_splits)
