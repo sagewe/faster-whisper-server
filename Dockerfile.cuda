@@ -26,4 +26,4 @@ ENV UVICORN_PORT=8000
 ENV WHISPER_MODELS_CONFIG_FILE=/root/faster-whisper-server/models/models.json
 ENV WHISPER__OFFLINE_MODELS_ROOT=/root/faster-whisper-server/models
 COPY ./test_online.py ./
-CMD ["/root/faster-whisper-server/.venv/bin/uvicorn", "--factory", "faster_whisper_server.main:create_app", "--workers", "8"]
+CMD ["/root/faster-whisper-server/.venv/bin/uvicorn", "--factory", "faster_whisper_server.main:create_app"]

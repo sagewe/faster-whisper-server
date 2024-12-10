@@ -181,3 +181,4 @@ outputs*
 Justfile
 *.ipynb
 dataset
+vectorstore*
