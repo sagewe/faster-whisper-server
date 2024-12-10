@@ -47,12 +47,7 @@ class RAGLLM:
         api_key=None,
         streaming=False,
     ):
-        if vectorstore_path is None or vectorstore_path == "":
-            vectorstore_path = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, os.pardir, "vectorstore")
-            )
-
-        if not os.path.exists(vectorstore_path):
+        if vectorstore_path is None or vectorstore_path == "" or not os.path.exists(vectorstore_path):
             raise ValueError(f"Vectorstore path {vectorstore_path} not found")
         if collection_name not in mapping:
             raise ValueError(f"Collection name {collection_name} not found in mapping")
@@ -150,7 +145,10 @@ def get_punctuation_pos(token):
 
 
 if __name__ == "__main__":
-    rag_llm = RAGLLM("银行与保险知识库", streaming=True)
+    vectorstore_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, os.pardir, "vectorstore")
+    )
+    rag_llm = RAGLLM(vectorstore_path=vectorstore_path, collection_name="银行与保险知识库", streaming=True)
     for s in rag_llm.stream("分红型储蓄有咩优势", "zh"):
         print(s)
     for s in rag_llm.stream("第二点展开说下", "zh"):
