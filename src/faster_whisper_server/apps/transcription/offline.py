@@ -37,7 +37,8 @@ class OfflineTranscription:
                     previous_transcription += text
                     yield [(previous_transcription, "confirmed")]
             else:
-                yield [(self.http_client.post(model, language, temperature, file), "confirmed")]
+                text, _ = self.http_client.post(model, language, temperature, file)
+                yield [(text, "confirmed")]
 
     @classmethod
     def create_gradio_interface(cls, config: Config, model_dropdown, language, temperature_slider, stream_checkbox):

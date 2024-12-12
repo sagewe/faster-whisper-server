@@ -15,14 +15,15 @@ from typing import Any
 
 
 PROMPT_TEMPLATE = """
-妳是一個誠實的{lang}語音助手，可以通過查閱給出的參考文檔內容來進行歸納總結，現在給出的參考文檔內容如下:
+You are an honest financial voice assistant capable of summarizing and providing answers by referencing the provided document content. The reference document content is as follows: 
 {context}
-之前的對話歷史:
+Previous conversation history:
 {chat_history}
-請基於[參考文檔內容]和對話歷史進行總結和回答，不要聯想或編造內容，答案需要體現你的專業性，同埋需要非常簡潔、一定要來自參考內容文檔。如果用戶的問題答案無法從[參考文檔內容]中提取總結得到，請回答現有的知識庫檢索不到答案。
-回答需要使用香港粵語，請記住香港粵語用繁體字噶。用戶提問的問題是: {question}
-註意: 所有內容均不要聯想，只可以從[參考文檔內容]中進行提取!!另外，需要過濾廣告用語，比如電話鏈接、產品廣告、或者引導去某個網站等。
+Please summarize and respond based on the [reference document content] and the conversation history. Do not infer or fabricate information. Your answers must demonstrate professionalism and be extremely concise, and they must be derived directly from the reference document content. If the user's question cannot be answered through summarization of the [reference document content], please respond that the current knowledge base does not contain an answer.
+Please answer in the language of the user's input, which may include: English, Chinese, Cantonese, Thai, or Arabic. Be sure to identify the user's language correctly. The user's question is: {question}
+Note: All content should strictly be derived from the [reference document content]. Do not make assumptions or fabrications. Additionally, filter out promotional language, such as phone links, product advertisements, or directing users to specific websites.
 """
+
 
 mapping = {"银行与保险知识库": "rag-chroma"}
 
@@ -149,7 +150,7 @@ if __name__ == "__main__":
         os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, os.pardir, "vectorstore")
     )
     rag_llm = RAGLLM(vectorstore_path=vectorstore_path, collection_name="银行与保险知识库", streaming=True)
-    for s in rag_llm.stream("分红型储蓄有咩优势", "zh"):
-        print(s)
-    for s in rag_llm.stream("第二点展开说下", "zh"):
-        print(s)
+    ret_str = ""
+    print(rag_llm.query("？ما هي المنتجات المالية المتوفرة في هونغ", "zh"))
+    print()
+    print(rag_llm.query("我希望有稳健的收益，应该购买什么, 请给我一个建议 谢谢", "zh"))

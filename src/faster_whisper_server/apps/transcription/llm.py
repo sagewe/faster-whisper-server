@@ -55,6 +55,7 @@ class AppState:
     qa: Optional[RAGLLM] = None
     asr_input: Optional[str] = None
     asr_result: Optional[str] = None
+    tts_language: Optional[str] = None
 
 
 desc2lang = {
@@ -135,11 +136,6 @@ class AudioChatBot:
 
         return (duration - dur_vad) > 1
 
-    def asr(self, path, model: str, language: str, temperature: float):
-        with Path(path).open("rb") as file:
-            asr_result = self.http_client.post(model, language, temperature, file)
-        return asr_result
-
     def on_stream(self, audio: tuple, state: AppState):
         logger.info("on_stream, state: %s", state)
         if state.stream is None:
@@ -214,21 +210,26 @@ class AudioChatBot:
         logger.info("on_asr, state: %s", state)
         start_time = time.time()
         logger.info("Start ASR")
-        asr_result = self.asr(state.asr_input, asr_model, asr_language, asr_temperature)
+        with Path(state.asr_input).open("rb") as f:
+            asr_result, asr_language = self.http_client.post(
+                asr_model, asr_language, asr_temperature, f, response_format="verbose_json"
+            )
+
         user_asr_message = {"role": "user", "content": asr_result}
         state.conversation_visual.append(user_asr_message)
         state.asr_result = asr_result
+        state.tts_language = asr_language
         logger.info(f"ASR done, time cost: {time.time() - start_time:.3f} s")
         return state, state.conversation_visual
 
-    def on_answer(self, state: AppState, tts_language: str, speed_rate: float, add_chat_audio: bool):
+    def on_answer(self, state: AppState, speed_rate: float, add_chat_audio: bool):
         logger.info("on_answer, state: %s", state)
         # LLM
         start_time = time.time()
         logger.info("Start AI response")
 
         def get_tts(text, language, speed_rate):
-            tts = gTTS(text, lang=desc2lang[language])
+            tts = gTTS(text, lang=language)
             with tempfile.NamedTemporaryFile(suffix=".mp3") as f:
                 tts.write_to_fp(f)
                 librosa_audio, sr = librosa.load(f.name, sr=None)
@@ -238,12 +239,12 @@ class AudioChatBot:
         cache = ""
         full_tts = np.array([])
         state.conversation_visual.append({"role": "assistant", "content": ""})
-        for chunk in state.qa.stream(state.asr_result, tts_language):
+        for chunk in state.qa.stream(state.asr_result, state.tts_language):
             state.conversation_visual[-1]["content"] += chunk
             cache += chunk
             if cache and cache[-1] in punctuation:
                 try:
-                    sr, librosa_audio = get_tts(cache, tts_language, speed_rate)
+                    sr, librosa_audio = get_tts(cache, state.tts_language, speed_rate)
                     full_tts = np.concatenate((full_tts, librosa_audio))
                     yield state, (sr, np.int16(librosa_audio * 32768.0)), state.conversation_visual
                 except Exception as e:
@@ -253,7 +254,7 @@ class AudioChatBot:
                 yield state, None, state.conversation_visual
         if cache:
             try:
-                sr, librosa_audio = get_tts(cache, tts_language, speed_rate)
+                sr, librosa_audio = get_tts(cache, state.tts_language, speed_rate)
                 full_tts = np.concatenate((full_tts, librosa_audio))
                 yield state, (sr, np.int16(librosa_audio * 32768.0)), state.conversation_visual
             except Exception as e:
@@ -286,11 +287,6 @@ class AudioChatBot:
             with gr.Column(scale=1):
                 with gr.Accordion(label="语音设置"):
                     speed_rate_slider = gr.Slider(minimum=0.5, maximum=3.0, step=0.1, label="语速", value=1.5)
-                    tts_language_dropdown = gr.Dropdown(
-                        choices=list(desc2lang.keys()),
-                        label="机器人口音",
-                        value="香港粤语",
-                    )
                     input_audio = gr.Audio(label="语音输入", sources="microphone", type="numpy")
                     output_audio = gr.Audio(label="语音输出", type="numpy", autoplay=True, streaming=True)
                 with gr.Accordion(label="对话设置", open=False):
@@ -352,7 +348,7 @@ class AudioChatBot:
             )
             .success(
                 audio_chatbot.on_answer,
-                [state, tts_language_dropdown, speed_rate_slider, add_chat_audio],
+                [state, speed_rate_slider, add_chat_audio],
                 [state, output_audio, chatbot],
             )
         )

@@ -71,18 +71,31 @@ class HttpTranscriberClient:
         self.base_url = f"http://{host}:{port}"
         self.http_client = httpx.Client(base_url=self.base_url, timeout=timeout)
 
-    def post(self, model: str, language: str, temperature: float, file):
+    def post(self, model: str, language: str, temperature: float, file, response_format="text") -> tuple[str, str]:
+        data = {
+            "response_format": response_format,
+            "model": model,
+            "temperature": temperature,
+        }
+        if language != "auto":
+            data["language"] = language
         response = self.http_client.post(
             self.endpoint,
             files={"file": file},
-            data={
-                "response_format": "text",
-                "model": model,
-                "temperature": temperature,
-            },
+            data=data,
         )
         response.raise_for_status()
-        return response.text
+        if response_format == "text":
+            return response.text, language
+        elif response_format == "verbose_json":
+            from faster_whisper_server.api_models import CreateTranscriptionResponseVerboseJson, segments_to_text
+
+            response = CreateTranscriptionResponseVerboseJson.model_validate_json(response.text)
+            return segments_to_text(response.segments), response.language
+        elif response_format == "json":
+            return response.json(), language
+        else:
+            raise ValueError(f"Unknown response format: {response_format}")
 
     def sse_post(self, model: str, language: str, temperature: float, file) -> Generator[str, None, None]:
         with connect_sse(
