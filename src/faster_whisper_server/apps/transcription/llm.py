@@ -242,9 +242,12 @@ class AudioChatBot:
             state.conversation_visual[-1]["content"] += chunk
             cache += chunk
             if cache and cache[-1] in punctuation:
-                sr, librosa_audio = get_tts(cache, tts_language, speed_rate)
-                full_tts = np.concatenate((full_tts, librosa_audio))
-                yield state, (sr, np.int16(librosa_audio * 32768.0)), state.conversation_visual
+                try:
+                    sr, librosa_audio = get_tts(cache, tts_language, speed_rate)
+                    full_tts = np.concatenate((full_tts, librosa_audio))
+                    yield state, (sr, np.int16(librosa_audio * 32768.0)), state.conversation_visual
+                except Exception as e:
+                    print(e)
                 cache = ""
             else:
                 yield state, None, state.conversation_visual
