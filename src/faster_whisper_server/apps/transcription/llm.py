@@ -4,6 +4,7 @@ import tempfile
 import time
 import traceback
 from dataclasses import dataclass, field
+from tracemalloc import start
 from typing import Optional
 
 import gradio as gr
@@ -228,7 +229,11 @@ class AudioChatBot:
         start_time = time.time()
         logger.info("Start AI response")
 
+        def remove_punctuation(text):
+            return "".join(char for char in text if char not in punctuation)
+
         def get_tts(text, language, speed_rate):
+            text = remove_punctuation(text)
             tts = gTTS(text, lang=language)
             with tempfile.NamedTemporaryFile(suffix=".mp3") as f:
                 tts.write_to_fp(f)
@@ -240,13 +245,28 @@ class AudioChatBot:
         full_tts = np.array([])
         state.conversation_visual.append({"role": "assistant", "content": ""})
         for chunk in state.qa.stream(state.asr_result, state.tts_language):
-            state.conversation_visual[-1]["content"] += chunk
+            # state.conversation_visual[-1]["content"] += chunk
             cache += chunk
             if cache and cache[-1] in punctuation:
                 try:
                     sr, librosa_audio = get_tts(cache, state.tts_language, speed_rate)
                     full_tts = np.concatenate((full_tts, librosa_audio))
+                    tts_time = len(librosa_audio) / sr
+                    # yield tts first
                     yield state, (sr, np.int16(librosa_audio * 32768.0)), state.conversation_visual
+                    # yield conversation visual with same time as tts
+                    text_size = len(cache)
+                    num_step = int(tts_time / 0.5)
+                    end = 0
+                    for i in range(num_step):
+                        time.sleep(0.4)
+                        start = int((text_size / num_step) * i)
+                        end = int((text_size / num_step) * (i + 1))
+                        state.conversation_visual[-1]["content"] += cache[start:end]
+                        yield state, None, state.conversation_visual
+
+                    state.conversation_visual[-1]["content"] += cache[end:]
+                    yield state, None, state.conversation_visual
                 except Exception as e:
                     print(e)
                 cache = ""
@@ -256,7 +276,20 @@ class AudioChatBot:
             try:
                 sr, librosa_audio = get_tts(cache, state.tts_language, speed_rate)
                 full_tts = np.concatenate((full_tts, librosa_audio))
+                tts_time = len(librosa_audio) / sr
+                # yield tts first
                 yield state, (sr, np.int16(librosa_audio * 32768.0)), state.conversation_visual
+                # yield conversation visual with same time as tts
+                text_size = len(cache)
+                num_step = int(tts_time / 0.5)
+                end = 0
+                for i in range(num_step):
+                    start = int((text_size / num_step) * i)
+                    end = int((text_size / num_step) * (i + 1))
+                    state.conversation_visual[-1]["content"] += cache[start:end]
+                    yield state, None, state.conversation_visual
+                state.conversation_visual[-1]["content"] += cache[end:]
+                yield state, None, state.conversation_visual
             except Exception as e:
                 print(e)
 
